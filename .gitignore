@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Cache
+.cache/
+.parcel-cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Local data (created at runtime)
+# Note: actual app data is stored in ~/.image-sorter/
