@@ -467,12 +467,12 @@ app.post('/api/vault/images/batch-trash', async (req, res) => {
     return res.status(400).json({ message: 'imageIds array is required' });
   }
 
-  const results: { id: string; success: boolean; error?: string }[] = [];
+  const results: { id: string; success: boolean; path?: string; filename?: string; error?: string }[] = [];
 
   for (const imageId of imageIds) {
     try {
-      await vault.moveImageToTrash(imageId);
-      results.push({ id: imageId, success: true });
+      const result = await vault.moveImageToTrash(imageId);
+      results.push({ id: imageId, success: true, path: result.path, filename: result.filename });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       results.push({ id: imageId, success: false, error: message });
@@ -550,6 +550,54 @@ app.post('/api/files/show-in-finder', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Failed to open in Finder' });
   }
+});
+
+app.post('/api/files/open-folder', async (req, res) => {
+  const { path: folderPath } = req.body;
+
+  if (!folderPath) {
+    return res.status(400).json({ message: 'path is required' });
+  }
+
+  try {
+    await execAsync(`open "${folderPath}"`);
+    res.json({ message: 'Opened folder in Finder' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to open folder in Finder' });
+  }
+});
+
+// Get album folder path
+app.get('/api/albums/:id/path', (req, res) => {
+  const { id } = req.params;
+
+  const album = database.getAlbumById(id);
+  if (!album) {
+    return res.status(404).json({ message: 'Album not found' });
+  }
+
+  if (!album.vaultId) {
+    return res.status(400).json({ message: 'Album has no vault' });
+  }
+
+  const vaultRecord = database.getVaultById(album.vaultId);
+  if (!vaultRecord) {
+    return res.status(404).json({ message: 'Vault not found' });
+  }
+
+  // Build album path
+  const albums = database.getAllAlbums();
+  const sanitizeFilename = (name: string) => name.replace(/[/\\]/g, '-');
+
+  const getAlbumPath = (a: typeof album): string => {
+    if (!a.parentId) return sanitizeFilename(a.name);
+    const parent = albums.find(p => p.id === a.parentId);
+    if (!parent) return sanitizeFilename(a.name);
+    return path.join(getAlbumPath(parent), sanitizeFilename(a.name));
+  };
+
+  const fullPath = path.join(vaultRecord.path, getAlbumPath(album));
+  res.json({ path: fullPath });
 });
 
 app.post('/api/files/open-preview', async (req, res) => {

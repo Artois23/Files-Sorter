@@ -140,11 +140,22 @@ export const api = {
     });
   },
 
+  async openFolder(path: string): Promise<void> {
+    return fetchJson('/files/open-folder', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    });
+  },
+
   async openWithPreview(path: string): Promise<void> {
     return fetchJson('/files/open-preview', {
       method: 'POST',
       body: JSON.stringify({ path }),
     });
+  },
+
+  async getAlbumPath(albumId: string): Promise<{ path: string }> {
+    return fetchJson(`/albums/${albumId}/path`);
   },
 
   // Export
@@ -249,7 +260,7 @@ export const api = {
   },
 
   async batchTrashImages(imageIds: string[]): Promise<{
-    results: { id: string; success: boolean; error?: string }[];
+    results: { id: string; success: boolean; path?: string; filename?: string; error?: string }[];
   }> {
     return fetchJson('/vault/images/batch-trash', {
       method: 'POST',

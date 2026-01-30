@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
+import trash from 'trash';
 import { database } from './database.js';
 import { scanner } from './scanner.js';
 import type { Album, Vault } from './types.js';
@@ -771,8 +772,9 @@ export const vault = {
 
   /**
    * Move an image to trash (uses the image's vault's _Trash folder)
+   * Returns the new path and filename so frontend can update state
    */
-  async moveImageToTrash(imageId: string): Promise<void> {
+  async moveImageToTrash(imageId: string): Promise<{ path: string; filename: string }> {
     const image = database.getImageById(imageId);
 
     if (!image) {
@@ -815,11 +817,15 @@ export const vault = {
 
     // Log the deletion
     const relativeFrom = image.path.replace(vaultPath, '');
-    const relativeTo = targetPath.replace(vaultPath, '');
     await writeVaultLog(vaultPath, 'DELETE', `"${relativeFrom}" → "_Trash/${path.basename(targetPath)}"`);
 
-    // Remove from database
-    database.deleteImages([imageId]);
+    const newFilename = path.basename(targetPath);
+
+    // Update image in database with new path and trash status
+    database.updateImagePath(imageId, targetPath, newFilename);
+    database.updateImages([imageId], { status: 'trash', albumId: null });
+
+    return { path: targetPath, filename: newFilename };
   },
 
   /**
@@ -879,11 +885,12 @@ export const vault = {
   },
 
   /**
-   * Empty the trash folders (permanently delete files from all vaults)
+   * Empty the trash folders (move files to Finder's Trash)
    */
   async emptyTrash(): Promise<{ deletedCount: number }> {
     const vaults = database.getAllVaults();
     let deletedCount = 0;
+    const filesToTrash: string[] = [];
 
     for (const vaultRecord of vaults) {
       const trashDir = path.join(vaultRecord.path, '_Trash');
@@ -893,18 +900,7 @@ export const vault = {
 
         for (const entry of entries) {
           if (entry.name.startsWith('.')) continue;
-
-          const filePath = path.join(trashDir, entry.name);
-          try {
-            if (entry.isDirectory()) {
-              await fs.rm(filePath, { recursive: true });
-            } else {
-              await fs.unlink(filePath);
-            }
-            deletedCount++;
-          } catch (error) {
-            console.error(`Failed to delete ${filePath}:`, error);
-          }
+          filesToTrash.push(path.join(trashDir, entry.name));
         }
       } catch {
         // Trash folder doesn't exist for this vault
@@ -919,22 +915,34 @@ export const vault = {
         const entries = await fs.readdir(trashDir, { withFileTypes: true });
         for (const entry of entries) {
           if (entry.name.startsWith('.')) continue;
-          const filePath = path.join(trashDir, entry.name);
-          try {
-            if (entry.isDirectory()) {
-              await fs.rm(filePath, { recursive: true });
-            } else {
-              await fs.unlink(filePath);
-            }
-            deletedCount++;
-          } catch (error) {
-            console.error(`Failed to delete ${filePath}:`, error);
-          }
+          filesToTrash.push(path.join(trashDir, entry.name));
         }
       } catch {
         // Trash folder doesn't exist
       }
     }
+
+    // Move all files to Finder's Trash
+    if (filesToTrash.length > 0) {
+      try {
+        await trash(filesToTrash);
+        deletedCount = filesToTrash.length;
+      } catch (error) {
+        console.error('Failed to move files to Finder Trash:', error);
+        // Try one by one if batch fails
+        for (const filePath of filesToTrash) {
+          try {
+            await trash(filePath);
+            deletedCount++;
+          } catch (err) {
+            console.error(`Failed to trash ${filePath}:`, err);
+          }
+        }
+      }
+    }
+
+    // Delete all images with status 'trash' from database
+    database.deleteImagesByStatus('trash');
 
     return { deletedCount };
   },

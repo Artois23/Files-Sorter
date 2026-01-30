@@ -180,20 +180,101 @@ function App() {
       const draggedAlbum = albums.find((a) => a.id === active.id);
       if (!draggedAlbum) return;
 
-      // Handle album drop onto sidebar-root (move to top level)
+      // Handle album drop onto vault header (move to vault root)
+      if (overData?.type === 'vault') {
+        const targetVaultId = overData.vaultId;
+
+        // If album is already at root of this vault, do nothing
+        if (draggedAlbum.parentId === null && draggedAlbum.vaultId === targetVaultId) {
+          return;
+        }
+
+        try {
+          // Move to vault root (parentId = null)
+          const updatedAlbum = await api.moveVaultFolder(draggedAlbum.id, null);
+          const updatedAlbums = albums.map((a) =>
+            a.id === draggedAlbum.id
+              ? { ...a, parentId: null, vaultId: targetVaultId, order: updatedAlbum.order }
+              : a
+          );
+          reorderAlbums(updatedAlbums);
+        } catch (error) {
+          console.error('Failed to move album to vault root:', error);
+          alert(error instanceof Error ? error.message : 'Failed to move folder');
+        }
+        return;
+      }
+
+      // Handle album drop onto sidebar-root (move to top level of vault)
       if (overData?.type === 'sidebar-root') {
-        if (draggedAlbum.parentId !== null) {
+        const targetVaultId = overData.vaultId || draggedAlbum.vaultId;
+
+        if (draggedAlbum.parentId !== null || draggedAlbum.vaultId !== targetVaultId) {
           try {
             // Move folder on disk and update database
             const updatedAlbum = await api.moveVaultFolder(draggedAlbum.id, null);
             const updatedAlbums = albums.map((a) =>
-              a.id === draggedAlbum.id ? { ...a, parentId: null, order: updatedAlbum.order } : a
+              a.id === draggedAlbum.id
+                ? { ...a, parentId: null, vaultId: targetVaultId, order: updatedAlbum.order }
+                : a
             );
             reorderAlbums(updatedAlbums);
           } catch (error) {
             console.error('Failed to move album to top level:', error);
             alert(error instanceof Error ? error.message : 'Failed to move folder');
           }
+        }
+        return;
+      }
+
+      // Handle album reordering (drop between albums)
+      if (overData?.type === 'album-reorder') {
+        const { targetAlbumId, position, parentId, vaultId } = overData;
+
+        // Don't reorder if dropping on itself
+        if (targetAlbumId === draggedAlbum.id) return;
+
+        // Get siblings at this level
+        const siblings = albums
+          .filter((a) => a.parentId === parentId && a.vaultId === vaultId)
+          .sort((a, b) => a.order - b.order);
+
+        let newOrder: number;
+
+        if (position === 'end' || targetAlbumId === null) {
+          // Dropping at the end of the list
+          const lastSibling = siblings[siblings.length - 1];
+          newOrder = lastSibling ? lastSibling.order + 1 : 0;
+        } else {
+          const targetIndex = siblings.findIndex((a) => a.id === targetAlbumId);
+          if (targetIndex === -1) return;
+
+          if (position === 'before') {
+            newOrder =
+              targetIndex > 0
+                ? (siblings[targetIndex - 1].order + siblings[targetIndex].order) / 2
+                : siblings[targetIndex].order - 1;
+          } else {
+            newOrder =
+              targetIndex < siblings.length - 1
+                ? (siblings[targetIndex].order + siblings[targetIndex + 1].order) / 2
+                : siblings[targetIndex].order + 1;
+          }
+        }
+
+        try {
+          // If parent changes, use moveVaultFolder
+          if (draggedAlbum.parentId !== parentId) {
+            await api.moveVaultFolder(draggedAlbum.id, parentId);
+          }
+          // Update local state with new order
+          const updatedAlbums = albums.map((a) =>
+            a.id === draggedAlbum.id ? { ...a, parentId, order: newOrder } : a
+          );
+          reorderAlbums(updatedAlbums);
+        } catch (error) {
+          console.error('Failed to reorder album:', error);
+          alert(error instanceof Error ? error.message : 'Failed to reorder folder');
         }
         return;
       }

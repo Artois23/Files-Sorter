@@ -184,6 +184,18 @@ function AlbumItem({
     data: { type: 'album', albumId: album.id },
   });
 
+  // Drop zone for inserting BEFORE this album (sibling reordering)
+  const { setNodeRef: setBeforeDropRef, isOver: isOverBefore } = useDroppable({
+    id: `album-before-${album.id}`,
+    data: {
+      type: 'album-reorder',
+      targetAlbumId: album.id,
+      position: 'before',
+      parentId: album.parentId,
+      vaultId: album.vaultId,
+    },
+  });
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     setContextMenuPos({ x: e.clientX, y: e.clientY });
@@ -207,6 +219,15 @@ function AlbumItem({
 
   return (
     <>
+      {/* Drop indicator line before album for reordering */}
+      <div
+        ref={setBeforeDropRef}
+        style={{ marginLeft: depth * 16 }}
+        className={`h-0.5 mx-2 rounded transition-all ${
+          isOverBefore ? 'bg-accent h-1 my-0.5' : ''
+        }`}
+      />
+
       <div
         ref={setDroppableRef}
         style={{ paddingLeft: depth * 16, opacity: isDragging ? 0.5 : 1 }}
@@ -297,10 +318,15 @@ function AlbumItem({
         </span>
       </div>
 
-      {isExpanded &&
-        childAlbums.map((child) => (
-          <AlbumItemWrapper key={child.id} album={child} depth={depth + 1} />
-        ))}
+      {isExpanded && (
+        <>
+          {childAlbums.map((child) => (
+            <AlbumItemWrapper key={child.id} album={child} depth={depth + 1} />
+          ))}
+          {/* Drop zone at end of child list */}
+          {childAlbums.length > 0 && <DropZoneEnd parentId={album.id} vaultId={album.vaultId} />}
+        </>
+      )}
 
       {showContextMenu && (
         <ContextMenu
@@ -308,6 +334,15 @@ function AlbumItem({
           y={contextMenuPos.y}
           onClose={() => setShowContextMenu(false)}
           items={[
+            { label: 'Show in Finder', onClick: async () => {
+              try {
+                const { path } = await api.getAlbumPath(album.id);
+                await api.openFolder(path);
+              } catch (error) {
+                console.error('Failed to open in Finder:', error);
+              }
+            }},
+            { type: 'separator' },
             { label: 'New Sub-Album', onClick: onCreateSubAlbum },
             { label: 'Rename', onClick: handleStartRename },
             { type: 'separator' },
@@ -451,6 +486,29 @@ function ContextMenu({
   );
 }
 
+// Drop zone at the end of an album list for inserting after last album
+function DropZoneEnd({ parentId, vaultId }: { parentId: string | null; vaultId: string }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `album-end-${parentId ?? 'root'}-${vaultId}`,
+    data: {
+      type: 'album-reorder',
+      targetAlbumId: null,
+      position: 'end',
+      parentId,
+      vaultId,
+    },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`h-2 mx-2 rounded transition-all ${
+        isOver ? 'bg-accent h-1 my-0.5' : ''
+      }`}
+    />
+  );
+}
+
 // Vault section with nested albums
 interface VaultSectionProps {
   vault: Vault;
@@ -481,6 +539,18 @@ function VaultSection({
   const albums = useAppStore((state) => state.albums);
   const images = useAppStore((state) => state.images);
 
+  // Drop zone for vault header - allows dropping albums directly onto vault
+  const { setNodeRef: setVaultHeaderDropRef, isOver: isOverVaultHeader } = useDroppable({
+    id: `vault-header-${vault.id}`,
+    data: { type: 'vault', vaultId: vault.id },
+  });
+
+  // Drop zone for vault root level - allows dropping albums into vault's album area
+  const { setNodeRef: setVaultDropRef, isOver: isOverVaultRoot } = useDroppable({
+    id: `vault-root-${vault.id}`,
+    data: { type: 'sidebar-root', vaultId: vault.id },
+  });
+
   // Get root albums for this vault
   const rootAlbums = albums
     .filter((a) => a.vaultId === vault.id && a.parentId === null)
@@ -504,13 +574,15 @@ function VaultSection({
       <div className="mb-1">
         {/* Vault header row */}
         <div
+          ref={setVaultHeaderDropRef}
           onContextMenu={handleContextMenu}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           className={`
             flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-colors
             ${!vault.isVisible ? 'opacity-50' : ''}
-            ${isActive ? 'bg-accent text-white' : 'hover:bg-macos-dark-bg-3'}
+            ${isOverVaultHeader ? 'bg-accent/50 ring-2 ring-accent' : ''}
+            ${isActive && !isOverVaultHeader ? 'bg-accent text-white' : !isOverVaultHeader ? 'hover:bg-macos-dark-bg-3' : ''}
           `}
           onClick={onNavigate}
         >
@@ -573,10 +645,17 @@ function VaultSection({
 
         {/* Nested albums */}
         {isExpanded && (
-          <div className="ml-4">
+          <div
+            ref={setVaultDropRef}
+            className={`ml-4 min-h-[24px] ${isOverVaultRoot ? 'bg-accent/20 rounded' : ''}`}
+          >
             {rootAlbums.map((album) => (
               <AlbumItemWrapper key={album.id} album={album} depth={0} />
             ))}
+
+            {/* Drop zone at end of list */}
+            {rootAlbums.length > 0 && <DropZoneEnd parentId={null} vaultId={vault.id} />}
+
             {rootAlbums.length === 0 && vault.isVisible && (
               <p className="text-11 text-macos-dark-text-tertiary px-2 py-1 italic">
                 No albums
@@ -592,6 +671,14 @@ function VaultSection({
           y={contextMenuPos.y}
           onClose={() => setShowContextMenu(false)}
           items={[
+            { label: 'Show in Finder', onClick: async () => {
+              try {
+                await api.openFolder(vault.path);
+              } catch (error) {
+                console.error('Failed to open in Finder:', error);
+              }
+            }},
+            { type: 'separator' },
             { label: vault.isVisible ? 'Hide Vault' : 'Show Vault', onClick: onToggleVisibility },
             { label: 'Sync Vault', onClick: onSync },
             { type: 'separator' },
@@ -829,9 +916,25 @@ export function Sidebar() {
       const ids = Array.from(selectedImageIds);
       try {
         // Use vault-centric API to actually move files to trash
-        await api.batchTrashImages(ids);
-        // Remove from local state since they're deleted from database
-        useAppStore.getState().removeImages(ids);
+        const result = await api.batchTrashImages(ids);
+
+        // Update images with trash status and new paths
+        for (const item of result.results) {
+          if (item.success && item.path && item.filename) {
+            updateImages([item.id], {
+              status: 'trash',
+              albumId: null,
+              path: item.path,
+              filename: item.filename,
+            });
+          }
+        }
+
+        // Show error if any failures
+        const failures = result.results.filter(r => !r.success);
+        if (failures.length > 0) {
+          console.error('Some files failed to move to trash:', failures);
+        }
       } catch (error) {
         console.error('Failed to move images to trash:', error);
       }
@@ -859,8 +962,15 @@ export function Sidebar() {
       const result = await api.emptyTrash();
       setTrashFileCount(0);
       setShowEmptyTrashConfirm(false);
+
+      // Remove trashed images from local state
+      const trashedIds = images.filter(img => img.status === 'trash').map(img => img.id);
+      if (trashedIds.length > 0) {
+        useAppStore.getState().removeImages(trashedIds);
+      }
+
       if (result.deletedCount > 0) {
-        alert(`Permanently deleted ${result.deletedCount} file(s) from trash.`);
+        alert(`Moved ${result.deletedCount} item(s) to Finder's Trash.`);
       }
     } catch (error) {
       console.error('Failed to empty trash:', error);
@@ -986,19 +1096,19 @@ export function Sidebar() {
             <div className="relative bg-macos-dark-bg-2 rounded-xl shadow-2xl w-[400px] overflow-hidden animate-scale-in">
               <div className="p-6 space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
-                    <Trash2 size={20} className="text-red-400" />
+                  <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                    <Trash2 size={20} className="text-amber-400" />
                   </div>
                   <div>
                     <h2 className="text-15 font-semibold">Empty Trash?</h2>
                     <p className="text-13 text-macos-dark-text-tertiary">
-                      {trashFileCount} file{trashFileCount !== 1 ? 's' : ''} will be permanently deleted.
+                      {trashFileCount} item{trashFileCount !== 1 ? 's' : ''} will be moved to Finder's Trash.
                     </p>
                   </div>
                 </div>
 
                 <p className="text-13 text-macos-dark-text-secondary">
-                  This action cannot be undone. The files will be permanently removed from your vault.
+                  Files can be recovered from Finder's Trash until you empty it.
                 </p>
 
                 <div className="flex justify-end gap-3 pt-2">
@@ -1012,9 +1122,9 @@ export function Sidebar() {
                   <button
                     onClick={handleEmptyTrash}
                     disabled={isEmptyingTrash}
-                    className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-md text-13 font-medium disabled:opacity-50"
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-13 font-medium disabled:opacity-50"
                   >
-                    {isEmptyingTrash ? 'Deleting...' : 'Empty Trash'}
+                    {isEmptyingTrash ? 'Moving...' : 'Empty Trash'}
                   </button>
                 </div>
               </div>

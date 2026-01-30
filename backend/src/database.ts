@@ -309,6 +309,10 @@ export const database = {
     db.prepare(`DELETE FROM images WHERE id IN (${placeholders})`).run(...ids);
   },
 
+  deleteImagesByStatus: (status: string): void => {
+    db.prepare('DELETE FROM images WHERE status = ?').run(status);
+  },
+
   updateImagePath: (id: string, newPath: string, newFilename: string): void => {
     db.prepare('UPDATE images SET path = ?, filename = ? WHERE id = ?').run(newPath, newFilename, id);
   },
