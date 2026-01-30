@@ -282,6 +282,19 @@ app.delete('/api/vault/folders/:id', async (req, res) => {
   }
 });
 
+app.post('/api/vault/folders/:id/move', async (req, res) => {
+  const { id } = req.params;
+  const { parentId } = req.body;
+
+  try {
+    const album = await vault.moveFolder(id, parentId ?? null);
+    res.json(album);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to move folder';
+    res.status(500).json({ message });
+  }
+});
+
 // Move image to album (vault-centric - moves file immediately)
 app.post('/api/vault/images/:id/move', async (req, res) => {
   const { id } = req.params;

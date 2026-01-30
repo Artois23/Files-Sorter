@@ -445,35 +445,52 @@ function ContextMenu({
   );
 }
 
-function TopLevelDropZone() {
+// Albums header that acts as drop zone for moving albums to top level
+function AlbumsHeader({ onCreateAlbum, onSync, isSyncing, hasVault }: {
+  onCreateAlbum: () => void;
+  onSync: () => void;
+  isSyncing: boolean;
+  hasVault: boolean;
+}) {
   const { active } = useDndContext();
-  const albums = useAppStore((state) => state.albums);
 
   const { setNodeRef, isOver } = useDroppable({
     id: 'sidebar-root',
     data: { type: 'sidebar-root' },
   });
 
-  // Only show when dragging a child album (not a root album or an image)
+  // Check if we're dragging an album
   const activeData = active?.data?.current;
-  const isAlbumDrag = activeData?.type === 'album';
-  const draggedAlbum = isAlbumDrag ? albums.find((a) => a.id === active?.id) : null;
-  const isChildAlbum = draggedAlbum?.parentId !== null;
-
-  if (!isChildAlbum) return null;
+  const isDraggingAlbum = activeData?.type === 'album';
 
   return (
     <div
       ref={setNodeRef}
       className={`
-        mt-2 mx-2 p-2 rounded-md border-2 border-dashed text-center text-11 transition-colors
-        ${isOver
-          ? 'border-accent bg-accent/20 text-accent'
-          : 'border-macos-dark-border text-macos-dark-text-tertiary'
-        }
+        flex items-center justify-between mb-2 px-2 py-1 -mx-1 rounded-md transition-colors
+        ${isOver && isDraggingAlbum ? 'bg-accent/30 ring-2 ring-accent' : ''}
       `}
     >
-      Move to top level
+      <h3 className="text-11 font-medium text-macos-dark-text-tertiary uppercase tracking-wide">
+        Albums {isOver && isDraggingAlbum && <span className="normal-case">(drop to move here)</span>}
+      </h3>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={onSync}
+          disabled={isSyncing || !hasVault}
+          className={`w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white disabled:opacity-30 ${isSyncing ? 'animate-spin' : ''}`}
+          title="Sync with vault folders"
+        >
+          <RefreshCw size={12} />
+        </button>
+        <button
+          onClick={onCreateAlbum}
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white"
+          title="Create album"
+        >
+          <Plus size={14} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -694,28 +711,12 @@ export function Sidebar() {
 
         {/* Albums section */}
         <div className="flex-1 overflow-y-auto p-3">
-          <div className="flex items-center justify-between mb-2 px-2">
-            <h3 className="text-11 font-medium text-macos-dark-text-tertiary uppercase tracking-wide">
-              Albums
-            </h3>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={syncVault}
-                disabled={isSyncing || !settings.vaultFolder}
-                className={`w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white disabled:opacity-30 ${isSyncing ? 'animate-spin' : ''}`}
-                title="Sync with vault folders"
-              >
-                <RefreshCw size={12} />
-              </button>
-              <button
-                onClick={handleCreateAlbum}
-                className="w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white"
-                title="Create album"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          </div>
+          <AlbumsHeader
+            onCreateAlbum={handleCreateAlbum}
+            onSync={syncVault}
+            isSyncing={isSyncing}
+            hasVault={!!settings.vaultFolder}
+          />
 
           <div className="space-y-0.5">
             {rootAlbums.map((album) => (
@@ -728,9 +729,6 @@ export function Sidebar() {
               No albums yet. Click + to create one.
             </p>
           )}
-
-          {/* Drop zone for moving albums to top level */}
-          <TopLevelDropZone />
         </div>
 
         {/* New album button at bottom */}

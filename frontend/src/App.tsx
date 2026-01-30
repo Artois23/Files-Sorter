@@ -70,10 +70,6 @@ function App() {
     })
   );
 
-  const rootAlbums = albums
-    .filter((a) => a.parentId === null)
-    .sort((a, b) => a.order - b.order);
-
   // Helper to check if an album is a descendant of another
   const isDescendantOf = (albumId: string, potentialAncestorId: string): boolean => {
     let current = albums.find((a) => a.id === albumId);
@@ -178,22 +174,16 @@ function App() {
       // Handle album drop onto sidebar-root (move to top level)
       if (overData?.type === 'sidebar-root') {
         if (draggedAlbum.parentId !== null) {
-          const maxRootOrder = Math.max(...rootAlbums.map((a) => a.order), -1);
-          const updatedAlbum = { ...draggedAlbum, parentId: null, order: maxRootOrder + 1 };
-          const updatedAlbums = albums.map((a) =>
-            a.id === draggedAlbum.id ? updatedAlbum : a
-          );
-          reorderAlbums(updatedAlbums);
           try {
-            await api.reorderAlbums(
-              updatedAlbums.map((a) => ({
-                id: a.id,
-                order: a.order,
-                parentId: a.parentId,
-              }))
+            // Move folder on disk and update database
+            const updatedAlbum = await api.moveVaultFolder(draggedAlbum.id, null);
+            const updatedAlbums = albums.map((a) =>
+              a.id === draggedAlbum.id ? { ...a, parentId: null, order: updatedAlbum.order } : a
             );
+            reorderAlbums(updatedAlbums);
           } catch (error) {
             console.error('Failed to move album to top level:', error);
+            alert(error instanceof Error ? error.message : 'Failed to move folder');
           }
         }
         return;
@@ -212,25 +202,16 @@ function App() {
         // Prevent dropping on current parent (no change needed)
         if (draggedAlbum.parentId === targetAlbumId) return;
 
-        // Calculate new order (add to end of target's children)
-        const siblingAlbums = albums.filter((a) => a.parentId === targetAlbumId);
-        const maxSiblingOrder = Math.max(...siblingAlbums.map((a) => a.order), -1);
-
-        const updatedAlbum = { ...draggedAlbum, parentId: targetAlbumId, order: maxSiblingOrder + 1 };
-        const updatedAlbums = albums.map((a) =>
-          a.id === draggedAlbum.id ? updatedAlbum : a
-        );
-        reorderAlbums(updatedAlbums);
         try {
-          await api.reorderAlbums(
-            updatedAlbums.map((a) => ({
-              id: a.id,
-              order: a.order,
-              parentId: a.parentId,
-            }))
+          // Move folder on disk and update database
+          const updatedAlbum = await api.moveVaultFolder(draggedAlbum.id, targetAlbumId);
+          const updatedAlbums = albums.map((a) =>
+            a.id === draggedAlbum.id ? { ...a, parentId: targetAlbumId, order: updatedAlbum.order } : a
           );
+          reorderAlbums(updatedAlbums);
         } catch (error) {
           console.error('Failed to reparent album:', error);
+          alert(error instanceof Error ? error.message : 'Failed to move folder');
         }
         return;
       }

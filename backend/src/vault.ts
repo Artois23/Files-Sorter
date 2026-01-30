@@ -324,6 +324,71 @@ export const vault = {
   },
 
   /**
+   * Move a folder to a new parent (or top level if parentId is null)
+   */
+  async moveFolder(albumId: string, newParentId: string | null): Promise<Album> {
+    const settings = database.getSettings();
+    if (!settings.vaultFolder) {
+      throw new Error('Vault folder not set');
+    }
+
+    const albums = database.getAllAlbums();
+    const album = albums.find(a => a.id === albumId);
+    if (!album) {
+      throw new Error('Album not found');
+    }
+
+    // Don't move if already at the target location
+    if (album.parentId === newParentId) {
+      return album;
+    }
+
+    // Build path helper
+    const getAlbumPath = (a: Album): string => {
+      if (!a.parentId) return sanitizeFilename(a.name);
+      const parent = albums.find(p => p.id === a.parentId);
+      if (!parent) return sanitizeFilename(a.name);
+      return path.join(getAlbumPath(parent), sanitizeFilename(a.name));
+    };
+
+    // Current path
+    const currentPath = path.join(settings.vaultFolder, getAlbumPath(album));
+
+    // New parent path
+    let newParentPath = settings.vaultFolder;
+    if (newParentId) {
+      const newParent = albums.find(a => a.id === newParentId);
+      if (!newParent) {
+        throw new Error('Target parent album not found');
+      }
+      newParentPath = path.join(settings.vaultFolder, getAlbumPath(newParent));
+    }
+
+    const newPath = path.join(newParentPath, sanitizeFilename(album.name));
+
+    // Check if target already exists
+    try {
+      await fs.access(newPath);
+      throw new Error(`A folder named "${album.name}" already exists at the destination`);
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err && err.code !== 'ENOENT') {
+        throw err;
+      }
+      // ENOENT means folder doesn't exist, which is what we want
+    }
+
+    // Move the folder
+    await fs.rename(currentPath, newPath);
+
+    // Update database
+    const siblingAlbums = albums.filter(a => a.parentId === newParentId);
+    const maxOrder = Math.max(0, ...siblingAlbums.map(a => a.order));
+    database.updateAlbum(albumId, { parentId: newParentId, order: maxOrder + 1 });
+
+    return { ...album, parentId: newParentId, order: maxOrder + 1 };
+  },
+
+  /**
    * Delete a folder from the vault
    */
   async deleteFolder(albumId: string, deleteContents: boolean = false): Promise<void> {

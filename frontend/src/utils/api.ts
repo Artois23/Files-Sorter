@@ -182,6 +182,13 @@ export const api = {
     });
   },
 
+  async moveVaultFolder(id: string, parentId: string | null): Promise<Album> {
+    return fetchJson(`/vault/folders/${id}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ parentId }),
+    });
+  },
+
   async moveImageToAlbum(imageId: string, albumId: string | null): Promise<ImageFile> {
     return fetchJson(`/vault/images/${imageId}/move`, {
       method: 'POST',
