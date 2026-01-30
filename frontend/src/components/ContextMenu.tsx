@@ -44,35 +44,53 @@ export function ContextMenu() {
 
   const handleMoveToAlbum = async (albumId: string) => {
     try {
-      await api.updateImages(imageIds, { albumId, status: 'normal' });
-      updateImages(imageIds, { albumId, status: 'normal' });
+      // Vault-centric: move files on disk immediately
+      const result = await api.batchMoveImages(imageIds, albumId);
+      const successIds = result.results.filter(r => r.success).map(r => r.id);
+      if (successIds.length > 0) {
+        updateImages(successIds, { albumId, status: 'normal' });
+      }
+      const failures = result.results.filter(r => !r.success);
+      if (failures.length > 0) {
+        alert(`${failures.length} file(s) failed to move.`);
+      }
     } catch (error) {
       console.error('Failed to move images to album:', error);
+      alert(error instanceof Error ? error.message : 'Failed to move images');
     }
     setContextMenu(null);
   };
 
   const handleMarkTrash = async () => {
     try {
-      await api.updateImages(imageIds, { status: 'trash', albumId: null });
-      updateImages(imageIds, { status: 'trash', albumId: null });
+      // Vault-centric: actually delete/trash files
+      await api.batchTrashImages(imageIds);
+      useAppStore.getState().removeImages(imageIds);
     } catch (error) {
-      console.error('Failed to mark images as trash:', error);
+      console.error('Failed to trash images:', error);
+      alert(error instanceof Error ? error.message : 'Failed to trash images');
     }
     setContextMenu(null);
   };
 
   const handleMarkNotSure = async () => {
     try {
-      await api.updateImages(imageIds, { status: 'not-sure', albumId: null });
-      updateImages(imageIds, { status: 'not-sure', albumId: null });
+      // Vault-centric: move files to _Sort Later folder
+      for (const id of imageIds) {
+        const result = await api.sortLaterImage(id);
+        updateImages([id], { status: 'not-sure', albumId: null, path: result.path, filename: result.filename });
+      }
     } catch (error) {
-      console.error('Failed to mark images as not sure:', error);
+      console.error('Failed to move images to sort later:', error);
+      alert(error instanceof Error ? error.message : 'Failed to move images');
     }
     setContextMenu(null);
   };
 
   const handleRemoveFromAlbum = async () => {
+    // In vault-centric mode, "remove from album" would mean moving back to source/inbox
+    // For now, we'll just update the database without moving the file
+    // A more complete implementation would move to an "inbox" folder
     try {
       await api.updateImages(imageIds, { albumId: null });
       updateImages(imageIds, { albumId: null });

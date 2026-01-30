@@ -44,6 +44,21 @@ const moveToSystemTrash = async (filePath: string): Promise<void> => {
   await execAsync(`osascript -e '${script}'`);
 };
 
+// Move file, with fallback to copy+delete for cross-filesystem moves
+const moveFile = async (sourcePath: string, targetPath: string): Promise<void> => {
+  try {
+    await fs.rename(sourcePath, targetPath);
+  } catch (error: unknown) {
+    // If cross-filesystem (EXDEV error), fall back to copy + delete
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'EXDEV') {
+      await fs.copyFile(sourcePath, targetPath);
+      await fs.unlink(sourcePath);
+    } else {
+      throw error;
+    }
+  }
+};
+
 export const organizer = {
   getProgress: (): OrganizeProgress => organizeProgress,
 
@@ -155,7 +170,7 @@ export const organizer = {
             const trashDir = path.join(settings.vaultFolder, '_Trash');
             await fs.mkdir(trashDir, { recursive: true });
             const targetPath = await getUniqueFilename(trashDir, image.filename);
-            await fs.rename(image.path, targetPath);
+            await moveFile(image.path, targetPath);
           }
         } else if (image.status === 'not-sure') {
           // Move to Sort Later folder
@@ -164,7 +179,7 @@ export const organizer = {
           const targetPath = await getUniqueFilename(sortLaterDir, image.filename);
 
           if (deleteOriginals) {
-            await fs.rename(image.path, targetPath);
+            await moveFile(image.path, targetPath);
           } else {
             await fs.copyFile(image.path, targetPath);
           }
@@ -176,7 +191,7 @@ export const organizer = {
           const targetPath = await getUniqueFilename(targetDir, image.filename);
 
           if (deleteOriginals) {
-            await fs.rename(image.path, targetPath);
+            await moveFile(image.path, targetPath);
           } else {
             await fs.copyFile(image.path, targetPath);
           }

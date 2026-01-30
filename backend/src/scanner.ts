@@ -133,4 +133,35 @@ export const scanner = {
       scanProgress.isScanning = false;
     }
   },
+
+  /**
+   * Generate thumbnail for a single image and update database
+   */
+  generateThumbnailForImage: async (imageData: {
+    id: string;
+    path: string;
+    isSupported: boolean;
+  }): Promise<void> => {
+    if (!imageData.isSupported) return;
+
+    const thumbnailsDir = database.getThumbnailsDir();
+
+    try {
+      const image = sharp(imageData.path);
+      const metadata = await image.metadata();
+
+      const thumbnailId = uuid();
+      const thumbnailPath = path.join(thumbnailsDir, `${thumbnailId}.jpg`);
+
+      await image
+        .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80 })
+        .toFile(thumbnailPath);
+
+      // Update database with thumbnail path and dimensions
+      database.updateImageThumbnail(imageData.id, thumbnailPath, metadata.width || null, metadata.height || null);
+    } catch (error) {
+      console.error(`Failed to generate thumbnail for ${imageData.path}:`, error);
+    }
+  },
 };

@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import {
   Menu,
   Settings,
@@ -5,9 +6,10 @@ import {
   LayoutGrid,
   FolderOpen,
   ChevronRight,
-  ArrowDownAZ,
-  ArrowUpAZ,
-  Calendar,
+  Filter,
+  Check,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
@@ -22,9 +24,8 @@ export function Toolbar() {
     hideAssigned,
     setHideAssigned,
     settings,
+    updateSettings,
     setShowSettings,
-    setShowOrganizeDialog,
-    setOrganizeSummary,
     albums,
     images,
     sortBy,
@@ -32,6 +33,28 @@ export function Toolbar() {
     setSortBy,
     setSortDirection,
   } = useAppStore();
+
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close filter menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        filterMenuRef.current &&
+        !filterMenuRef.current.contains(e.target as Node) &&
+        !filterButtonRef.current?.contains(e.target as Node)
+      ) {
+        setShowFilterMenu(false);
+      }
+    };
+
+    if (showFilterMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFilterMenu]);
 
   const currentAlbum = currentAlbumId
     ? albums.find((a) => a.id === currentAlbumId)
@@ -84,63 +107,12 @@ export function Toolbar() {
     }
   };
 
-  const handleOrganize = async () => {
-    // Check if vault folder is set
-    if (!settings.vaultFolder) {
-      alert('Please set a Vault folder in Settings first.');
-      setShowSettings(true);
-      return;
-    }
-
-    // Check if there are any assignments
-    const hasAssignments = images.some(
-      (img) => img.albumId || img.status === 'trash' || img.status === 'not-sure'
-    );
-
-    if (!hasAssignments) {
-      alert('No images to organize. Assign images to albums first.');
-      return;
-    }
-
-    try {
-      const summary = await api.getOrganizeSummary();
-      setOrganizeSummary(summary);
-      setShowOrganizeDialog(true);
-    } catch (error) {
-      console.error('Failed to get organize summary:', error);
-    }
-  };
-
   const assignedCount = images.filter(
     (img) => img.albumId && img.status === 'normal'
   ).length;
 
-  const handleCycleSort = () => {
-    // Cycle: Date ↓ → Date ↑ → Name ↓ → Name ↑ → Date ↓
-    if (sortBy === 'date' && sortDirection === 'desc') {
-      setSortDirection('asc');
-    } else if (sortBy === 'date' && sortDirection === 'asc') {
-      setSortBy('name');
-      setSortDirection('desc');
-    } else if (sortBy === 'name' && sortDirection === 'desc') {
-      setSortDirection('asc');
-    } else {
-      setSortBy('date');
-      setSortDirection('desc');
-    }
-  };
-
-  const getSortIcon = () => {
-    if (sortBy === 'date') {
-      return <Calendar size={14} />;
-    }
-    return sortDirection === 'desc' ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />;
-  };
-
-  const getSortLabel = () => {
-    const dir = sortDirection === 'desc' ? '↓' : '↑';
-    return sortBy === 'date' ? `Date ${dir}` : `Name ${dir}`;
-  };
+  // Check if any filter is active
+  const hasActiveFilter = hideAssigned || sortBy !== 'date' || sortDirection !== 'desc';
 
   return (
     <header className="h-[52px] bg-macos-dark-bg-3 border-b border-macos-dark-border flex items-center px-3 gap-3">
@@ -199,42 +171,89 @@ export function Toolbar() {
 
       {/* Right section */}
       <div className="flex items-center gap-3">
-        {/* Hide assigned toggle (only in All Images view) */}
-        {currentView === 'all' && (
-          <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-13 text-macos-dark-text-secondary">
-              Hide Assigned
-            </span>
-            <div
-              className={`
-                relative w-10 h-6 rounded-full transition-colors
-                ${hideAssigned ? 'bg-accent' : 'bg-macos-dark-bg-1'}
-              `}
-              onClick={() => setHideAssigned(!hideAssigned)}
-            >
-              <div
-                className={`
-                  absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform
-                  ${hideAssigned ? 'translate-x-5' : 'translate-x-1'}
-                `}
-              />
-            </div>
-            {hideAssigned && assignedCount > 0 && (
-              <span className="text-11 text-macos-dark-text-tertiary">
-                ({assignedCount} hidden)
-              </span>
-            )}
-          </label>
-        )}
+        {/* Filter dropdown */}
+        <div className="relative">
+          <button
+            ref={filterButtonRef}
+            onClick={() => setShowFilterMenu(!showFilterMenu)}
+            className={`
+              w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2
+              ${hasActiveFilter ? 'text-accent' : 'text-macos-dark-text-secondary'}
+            `}
+            title="Filter & Sort"
+          >
+            <Filter size={18} />
+          </button>
 
-        {/* Sort button */}
+          {showFilterMenu && (
+            <div
+              ref={filterMenuRef}
+              className="absolute right-0 top-full mt-1 bg-macos-dark-bg-2/95 backdrop-blur-xl rounded-lg shadow-xl border border-macos-dark-border py-1 min-w-[180px] z-50"
+            >
+              {/* Sort options */}
+              <div className="px-3 py-1.5 text-11 text-macos-dark-text-tertiary uppercase tracking-wide">
+                Sort By
+              </div>
+              <button
+                onClick={() => { setSortBy('date'); setSortDirection('desc'); }}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white flex items-center justify-between"
+              >
+                <span>Date (Newest)</span>
+                {sortBy === 'date' && sortDirection === 'desc' && <Check size={14} />}
+              </button>
+              <button
+                onClick={() => { setSortBy('date'); setSortDirection('asc'); }}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white flex items-center justify-between"
+              >
+                <span>Date (Oldest)</span>
+                {sortBy === 'date' && sortDirection === 'asc' && <Check size={14} />}
+              </button>
+              <button
+                onClick={() => { setSortBy('name'); setSortDirection('asc'); }}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white flex items-center justify-between"
+              >
+                <span>Name (A-Z)</span>
+                {sortBy === 'name' && sortDirection === 'asc' && <Check size={14} />}
+              </button>
+              <button
+                onClick={() => { setSortBy('name'); setSortDirection('desc'); }}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white flex items-center justify-between"
+              >
+                <span>Name (Z-A)</span>
+                {sortBy === 'name' && sortDirection === 'desc' && <Check size={14} />}
+              </button>
+
+              <div className="h-px bg-macos-dark-border my-1" />
+
+              {/* Filter options */}
+              <div className="px-3 py-1.5 text-11 text-macos-dark-text-tertiary uppercase tracking-wide">
+                Filter
+              </div>
+              <button
+                onClick={() => setHideAssigned(!hideAssigned)}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white flex items-center justify-between"
+              >
+                <span>Hide Assigned{assignedCount > 0 ? ` (${assignedCount})` : ''}</span>
+                {hideAssigned && <Check size={14} />}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Show filenames toggle */}
         <button
-          onClick={handleCycleSort}
-          className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary"
-          title={`Sort by ${sortBy} (${sortDirection === 'desc' ? 'descending' : 'ascending'})`}
+          onClick={() => {
+            const newValue = !settings.showFilenameOverlay;
+            updateSettings({ showFilenameOverlay: newValue });
+            api.updateSettings({ showFilenameOverlay: newValue });
+          }}
+          className={`
+            w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2
+            ${settings.showFilenameOverlay ? 'text-accent' : 'text-macos-dark-text-secondary'}
+          `}
+          title={settings.showFilenameOverlay ? 'Hide filenames' : 'Show filenames'}
         >
-          {getSortIcon()}
-          <span className="text-13">{getSortLabel()}</span>
+          {settings.showFilenameOverlay ? <Eye size={18} /> : <EyeOff size={18} />}
         </button>
 
         {/* Thumbnail size slider */}
@@ -246,18 +265,10 @@ export function Toolbar() {
             max={400}
             value={thumbnailSize}
             onChange={(e) => setThumbnailSize(Number(e.target.value))}
-            className="w-24 accent-accent"
+            className="w-48 h-1 bg-macos-dark-bg-1 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer"
           />
           <LayoutGrid size={18} className="text-macos-dark-text-tertiary" />
         </div>
-
-        {/* Organize button */}
-        <button
-          onClick={handleOrganize}
-          className="px-4 py-1.5 bg-accent hover:bg-accent-hover text-white rounded-md text-13 font-medium transition-colors"
-        >
-          Organize
-        </button>
 
         {/* Settings button */}
         <button

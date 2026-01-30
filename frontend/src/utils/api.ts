@@ -156,4 +156,75 @@ export const api = {
   async clearAllData(): Promise<void> {
     return fetchJson('/data/clear', { method: 'POST' });
   },
+
+  // Vault-centric operations
+  async syncVault(): Promise<Album[]> {
+    return fetchJson('/vault/sync', { method: 'POST' });
+  },
+
+  async createVaultFolder(name: string, parentId: string | null = null): Promise<Album> {
+    return fetchJson('/vault/folders', {
+      method: 'POST',
+      body: JSON.stringify({ name, parentId }),
+    });
+  },
+
+  async renameVaultFolder(id: string, name: string): Promise<Album> {
+    return fetchJson(`/vault/folders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    });
+  },
+
+  async deleteVaultFolder(id: string, deleteContents: boolean = false): Promise<void> {
+    return fetchJson(`/vault/folders/${id}?deleteContents=${deleteContents}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async moveImageToAlbum(imageId: string, albumId: string | null): Promise<ImageFile> {
+    return fetchJson(`/vault/images/${imageId}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ albumId }),
+    });
+  },
+
+  async trashImage(imageId: string): Promise<void> {
+    return fetchJson(`/vault/images/${imageId}/trash`, {
+      method: 'POST',
+    });
+  },
+
+  async sortLaterImage(imageId: string): Promise<ImageFile> {
+    return fetchJson(`/vault/images/${imageId}/sort-later`, {
+      method: 'POST',
+    });
+  },
+
+  async batchMoveImages(imageIds: string[], albumId: string | null): Promise<{
+    message: string;
+    results: { id: string; success: boolean; error?: string }[];
+  }> {
+    return fetchJson('/vault/images/batch-move', {
+      method: 'POST',
+      body: JSON.stringify({ imageIds, albumId }),
+    });
+  },
+
+  async batchTrashImages(imageIds: string[]): Promise<{
+    results: { id: string; success: boolean; error?: string }[];
+  }> {
+    return fetchJson('/vault/images/batch-trash', {
+      method: 'POST',
+      body: JSON.stringify({ imageIds }),
+    });
+  },
+
+  async getTrashInfo(): Promise<{ count: number; size: number }> {
+    return fetchJson('/vault/trash/info');
+  },
+
+  async emptyTrash(): Promise<{ deletedCount: number }> {
+    return fetchJson('/vault/trash/empty', { method: 'POST' });
+  },
 };

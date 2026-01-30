@@ -122,25 +122,17 @@ export function QuickLook() {
   const filmstripImages = visibleImages.slice(filmstripStart, filmstripEnd);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in">
+    <div className="fixed inset-0 z-50 flex flex-col animate-fade-in">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/85 backdrop-blur-sm"
         onClick={close}
       />
 
-      {/* Modal container */}
-      <div
-        className="relative flex flex-col"
-        style={{
-          width: '75vw',
-          height: '75vh',
-          maxWidth: 'calc(100vw - 48px)',
-          maxHeight: 'calc(100vh - 48px)'
-        }}
-      >
+      {/* Modal container - full screen */}
+      <div className="relative flex flex-col min-h-0 overflow-hidden w-full h-full">
         {/* Top bar */}
-        <div className="flex items-center justify-between bg-macos-dark-bg-2 rounded-t-xl px-4 py-3 relative z-10">
+        <div className="flex items-center justify-between bg-macos-dark-bg-2 px-4 py-3 relative z-10">
           <div className="flex items-center gap-3">
             <button
               onClick={close}
@@ -209,7 +201,7 @@ export function QuickLook() {
 
         {/* Image area */}
         <div
-          className="flex-1 flex items-center justify-center bg-macos-dark-bg-1 relative overflow-hidden"
+          className="flex-1 min-h-0 flex items-center justify-center bg-macos-dark-bg-1 relative overflow-hidden"
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -247,7 +239,7 @@ export function QuickLook() {
         </div>
 
         {/* Filmstrip */}
-        <div className="bg-macos-dark-bg-2 rounded-b-xl p-3 overflow-x-auto">
+        <div className="bg-macos-dark-bg-2 p-3 overflow-x-auto">
           <div className="flex gap-2 justify-center">
             {filmstripImages.map((image) => (
               <button

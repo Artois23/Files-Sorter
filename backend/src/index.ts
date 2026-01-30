@@ -8,6 +8,7 @@ import { v4 as uuid } from 'uuid';
 import { database } from './database.js';
 import { scanner } from './scanner.js';
 import { organizer } from './organizer.js';
+import { vault } from './vault.js';
 
 const execAsync = promisify(exec);
 
@@ -221,6 +222,191 @@ app.post('/api/albums/reorder', (req, res) => {
 
   database.reorderAlbums(albums);
   res.json({ message: 'Albums reordered' });
+});
+
+// Vault-centric operations
+app.post('/api/vault/sync', async (_req, res) => {
+  try {
+    const albums = await vault.syncAlbumsWithVault();
+    const images = database.getAllImages();
+    const albumsWithCount = albums.map(album => ({
+      ...album,
+      imageCount: images.filter(img => img.albumId === album.id && img.status === 'normal').length,
+    }));
+    res.json(albumsWithCount);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to sync vault';
+    res.status(500).json({ message });
+  }
+});
+
+app.post('/api/vault/folders', async (req, res) => {
+  const { name, parentId } = req.body;
+
+  try {
+    const album = await vault.createFolder(name || 'Untitled Folder', parentId || null);
+    res.json({ ...album, imageCount: 0 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to create folder';
+    res.status(500).json({ message });
+  }
+});
+
+app.patch('/api/vault/folders/:id', async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+
+  if (!name) {
+    return res.status(400).json({ message: 'name is required' });
+  }
+
+  try {
+    const album = await vault.renameFolder(id, name);
+    res.json(album);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to rename folder';
+    res.status(500).json({ message });
+  }
+});
+
+app.delete('/api/vault/folders/:id', async (req, res) => {
+  const { id } = req.params;
+  const { deleteContents } = req.query;
+
+  try {
+    await vault.deleteFolder(id, deleteContents === 'true');
+    res.json({ message: 'Folder deleted' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to delete folder';
+    res.status(500).json({ message });
+  }
+});
+
+// Move image to album (vault-centric - moves file immediately)
+app.post('/api/vault/images/:id/move', async (req, res) => {
+  const { id } = req.params;
+  const { albumId } = req.body;
+
+  try {
+    const result = await vault.moveImageToAlbum(id, albumId);
+    const image = database.getImageById(id);
+    res.json({
+      ...image,
+      ...result,
+      thumbnailUrl: image?.thumbnailPath
+        ? `/thumbnails/${path.basename(image.thumbnailPath)}`
+        : null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to move image';
+    res.status(500).json({ message });
+  }
+});
+
+// Move image to trash (vault-centric)
+app.post('/api/vault/images/:id/trash', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await vault.moveImageToTrash(id);
+    res.json({ message: 'Image moved to trash' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to trash image';
+    res.status(500).json({ message });
+  }
+});
+
+// Move image to sort later (vault-centric)
+app.post('/api/vault/images/:id/sort-later', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await vault.moveImageToSortLater(id);
+    const image = database.getImageById(id);
+    res.json({
+      ...image,
+      ...result,
+      thumbnailUrl: image?.thumbnailPath
+        ? `/thumbnails/${path.basename(image.thumbnailPath)}`
+        : null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to move image';
+    res.status(500).json({ message });
+  }
+});
+
+// Batch move images to album (vault-centric)
+app.post('/api/vault/images/batch-move', async (req, res) => {
+  const { imageIds, albumId } = req.body;
+
+  if (!imageIds || !Array.isArray(imageIds)) {
+    return res.status(400).json({ message: 'imageIds array is required' });
+  }
+
+  const results: { id: string; success: boolean; error?: string }[] = [];
+
+  for (const imageId of imageIds) {
+    try {
+      await vault.moveImageToAlbum(imageId, albumId);
+      results.push({ id: imageId, success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      results.push({ id: imageId, success: false, error: message });
+    }
+  }
+
+  const successCount = results.filter(r => r.success).length;
+  const failedCount = results.filter(r => !r.success).length;
+
+  res.json({
+    message: `Moved ${successCount} images${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
+    results,
+  });
+});
+
+// Batch trash images (vault-centric)
+app.post('/api/vault/images/batch-trash', async (req, res) => {
+  const { imageIds } = req.body;
+
+  if (!imageIds || !Array.isArray(imageIds)) {
+    return res.status(400).json({ message: 'imageIds array is required' });
+  }
+
+  const results: { id: string; success: boolean; error?: string }[] = [];
+
+  for (const imageId of imageIds) {
+    try {
+      await vault.moveImageToTrash(imageId);
+      results.push({ id: imageId, success: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      results.push({ id: imageId, success: false, error: message });
+    }
+  }
+
+  res.json({ results });
+});
+
+// Trash operations
+app.get('/api/vault/trash/info', async (_req, res) => {
+  try {
+    const info = await vault.getTrashInfo();
+    res.json(info);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to get trash info';
+    res.status(500).json({ message });
+  }
+});
+
+app.post('/api/vault/trash/empty', async (_req, res) => {
+  try {
+    const result = await vault.emptyTrash();
+    res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to empty trash';
+    res.status(500).json({ message });
+  }
 });
 
 // Settings

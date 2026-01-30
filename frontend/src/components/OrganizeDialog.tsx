@@ -269,7 +269,7 @@ export function OrganizeDialog() {
             </p>
           </div>
 
-          {/* Delete originals checkbox */}
+          {/* Move vs Copy toggle */}
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -277,7 +277,11 @@ export function OrganizeDialog() {
               onChange={(e) => setDeleteOriginals(e.target.checked)}
               className="accent-accent w-4 h-4"
             />
-            <span className="text-13">Delete original files after move</span>
+            <span className="text-13">
+              {deleteOriginals
+                ? 'Move files to vault (remove from source)'
+                : 'Copy files to vault (keep originals)'}
+            </span>
           </label>
         </div>
 

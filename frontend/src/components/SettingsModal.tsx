@@ -36,6 +36,10 @@ export function SettingsModal() {
       if (result?.path) {
         updateSettings({ vaultFolder: result.path });
         await api.updateSettings({ vaultFolder: result.path });
+
+        // Sync vault folders with albums
+        const syncedAlbums = await api.syncVault();
+        useAppStore.getState().setAlbums(syncedAlbums);
       }
     } catch (error) {
       console.error('Failed to select vault folder:', error);
@@ -217,31 +221,12 @@ export function SettingsModal() {
                 </div>
               </label>
 
-              {/* Trash handling */}
-              <div>
-                <label className="text-13 font-medium mb-2 block">Trash Handling</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="trashHandling"
-                      checked={settings.trashHandling === 'system'}
-                      onChange={() => updateSettings({ trashHandling: 'system' })}
-                      className="accent-accent"
-                    />
-                    <span className="text-13">Move to system Trash</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="trashHandling"
-                      checked={settings.trashHandling === 'vault'}
-                      onChange={() => updateSettings({ trashHandling: 'vault' })}
-                      className="accent-accent"
-                    />
-                    <span className="text-13">Move to Vault/_Trash</span>
-                  </label>
-                </div>
+              {/* Trash info */}
+              <div className="p-3 bg-macos-dark-bg-3 rounded-md">
+                <p className="text-13 text-macos-dark-text-secondary">
+                  Trashed files are moved to <code className="text-accent">Vault/_Trash</code>.
+                  Use the empty trash button in the sidebar to permanently delete them.
+                </p>
               </div>
             </div>
           </section>

@@ -34,7 +34,8 @@ function Thumbnail({
   onStartEdit,
   onCancelEdit,
 }: ThumbnailProps) {
-  const { settings, updateImage } = useAppStore();
+  const showStatusBadges = useAppStore((state) => state.settings.showStatusBadges);
+  const updateImage = useAppStore((state) => state.updateImage);
   const [editValue, setEditValue] = useState(image.filename);
   const [isRenaming, setIsRenaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +111,7 @@ function Thumbnail({
   });
 
   const getStatusBadge = () => {
-    if (!settings.showStatusBadges) return null;
+    if (!showStatusBadges) return null;
 
     if (image.status === 'trash') {
       return (
@@ -144,78 +145,80 @@ function Thumbnail({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`
-        relative rounded-lg overflow-hidden cursor-pointer transition-all duration-100
-        ${isSelected
-          ? 'ring-3 ring-accent scale-[1.02] shadow-lg'
-          : 'hover:brightness-110 hover:ring-1 hover:ring-white/20'
-        }
-        ${isDragging ? 'opacity-50' : ''}
-      `}
-      style={{
-        width: size,
-        height: size,
-      }}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
+      className={`flex flex-col ${isDragging ? 'opacity-50' : ''}`}
+      style={{ width: size }}
     >
-      {image.isSupported ? (
-        <img
-          src={image.thumbnailUrl}
-          alt={image.filename}
-          className="w-full h-full object-cover"
-          loading="lazy"
-          draggable={false}
-        />
-      ) : (
-        <div className="w-full h-full bg-macos-dark-bg-3 flex flex-col items-center justify-center gap-2">
-          <FileQuestion size={32} className="text-macos-dark-text-tertiary" />
-          <span className="text-11 text-macos-dark-text-tertiary font-medium px-2 py-0.5 bg-macos-dark-bg-1 rounded">
-            {image.format.toUpperCase()}
-          </span>
-        </div>
-      )}
+      {/* Thumbnail image */}
+      <div
+        className={`
+          relative rounded-lg overflow-hidden cursor-pointer transition-all duration-100
+          ${isSelected
+            ? 'ring-3 ring-accent scale-[1.02] shadow-lg'
+            : 'hover:brightness-110 hover:ring-1 hover:ring-white/20'
+          }
+        `}
+        style={{ width: size, height: size }}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+      >
+        {image.isSupported ? (
+          <img
+            src={image.thumbnailUrl}
+            alt={image.filename}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            draggable={false}
+          />
+        ) : (
+          <div className="w-full h-full bg-macos-dark-bg-3 flex flex-col items-center justify-center gap-2">
+            <FileQuestion size={32} className="text-macos-dark-text-tertiary" />
+            <span className="text-11 text-macos-dark-text-tertiary font-medium px-2 py-0.5 bg-macos-dark-bg-1 rounded">
+              {image.format.toUpperCase()}
+            </span>
+          </div>
+        )}
 
-      {getStatusBadge()}
+        {getStatusBadge()}
 
-      {!image.isSupported && (
-        <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-orange-500/80 flex items-center justify-center">
-          <AlertCircle size={14} className="text-white" />
-        </div>
-      )}
+        {!image.isSupported && (
+          <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-orange-500/80 flex items-center justify-center">
+            <AlertCircle size={14} className="text-white" />
+          </div>
+        )}
+      </div>
 
-      {settings.showFilenameOverlay && size >= 120 && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-          {isEditing ? (
-            <div className="relative">
-              <input
-                ref={inputRef}
-                type="text"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={handleRename}
-                onKeyDown={handleKeyDown}
-                onClick={(e) => e.stopPropagation()}
-                disabled={isRenaming}
-                className="w-full text-11 text-white bg-black/50 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-accent"
-              />
-              {isRenaming && (
-                <Loader2 size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-white animate-spin" />
-              )}
-            </div>
-          ) : (
-            <p
-              className="text-11 text-white truncate cursor-text"
-              onDoubleClick={handleFilenameDoubleClick}
-            >
-              {image.filename}
-            </p>
-          )}
-          {error && (
-            <p className="text-10 text-red-400 mt-0.5 truncate">{error}</p>
-          )}
-        </div>
-      )}
+      {/* Filename below thumbnail */}
+      <div className="filename-container mt-1">
+        {isEditing ? (
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={handleRename}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              disabled={isRenaming}
+              className="w-full text-xs text-white bg-neutral-700 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            {isRenaming && (
+              <Loader2 size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-neutral-400 animate-spin" />
+            )}
+          </div>
+        ) : (
+          <p
+            className="text-xs text-neutral-400 truncate text-center cursor-default"
+            onDoubleClick={handleFilenameDoubleClick}
+            title={image.filename}
+          >
+            {image.filename}
+          </p>
+        )}
+        {error && (
+          <p className="text-xs text-red-400 mt-0.5 truncate text-center">{error}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -227,6 +230,7 @@ export function ImageGrid() {
     selectImage,
     clearSelection,
     setContextMenu,
+    quickLookImageId,
     setQuickLookImageId,
     thumbnailSize,
     currentView,
@@ -252,10 +256,13 @@ export function ImageGrid() {
   const columnCount = getColumnCount();
   const rowCount = Math.ceil(visibleImages.length / columnCount);
 
+  const showFilenameOverlayGrid = useAppStore((state) => state.settings.showFilenameOverlay);
+  const filenameHeight = showFilenameOverlayGrid ? 24 : 0;
+
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => thumbnailSize + gap,
+    estimateSize: () => thumbnailSize + filenameHeight + gap,
     overscan: 3,
   });
 
@@ -313,6 +320,8 @@ export function ImageGrid() {
           break;
         case ' ':
         case 'Enter':
+          // Don't open preview if it's already open (QuickLook handles Space to close)
+          if (quickLookImageId) return;
           e.preventDefault();
           if (selectedImageIds.size > 0) {
             setQuickLookImageId(lastSelectedId || null);
@@ -339,6 +348,7 @@ export function ImageGrid() {
     columnCount,
     selectImage,
     clearSelection,
+    quickLookImageId,
     setQuickLookImageId,
   ]);
 
@@ -415,7 +425,7 @@ export function ImageGrid() {
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto bg-macos-dark-bg-1"
+      className={`flex-1 overflow-y-auto bg-macos-dark-bg-1 ${showFilenameOverlayGrid ? 'show-filenames' : 'hide-filenames'}`}
       style={{ padding }}
       onClick={handleContainerClick}
     >
