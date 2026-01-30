@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
-import { useDroppable, useDraggable } from '@dnd-kit/core';
+import { useDroppable, useDraggable, useDndContext } from '@dnd-kit/core';
 import type { Album } from '../types';
 
 interface SidebarItemProps {
@@ -222,7 +222,7 @@ function AlbumItem({
           ref={setDraggableRef}
           {...attributes}
           {...listeners}
-          className="w-4 h-4 flex items-center justify-center opacity-0 hover:opacity-100 cursor-grab"
+          className={`w-4 h-4 flex items-center justify-center cursor-grab transition-opacity ${isHovered ? 'opacity-60 hover:opacity-100' : 'opacity-0'}`}
         >
           <GripVertical size={12} />
         </div>
@@ -445,6 +445,39 @@ function ContextMenu({
   );
 }
 
+function TopLevelDropZone() {
+  const { active } = useDndContext();
+  const albums = useAppStore((state) => state.albums);
+
+  const { setNodeRef, isOver } = useDroppable({
+    id: 'sidebar-root',
+    data: { type: 'sidebar-root' },
+  });
+
+  // Only show when dragging a child album (not a root album or an image)
+  const activeData = active?.data?.current;
+  const isAlbumDrag = activeData?.type === 'album';
+  const draggedAlbum = isAlbumDrag ? albums.find((a) => a.id === active?.id) : null;
+  const isChildAlbum = draggedAlbum?.parentId !== null;
+
+  if (!isChildAlbum) return null;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`
+        mt-2 mx-2 p-2 rounded-md border-2 border-dashed text-center text-11 transition-colors
+        ${isOver
+          ? 'border-accent bg-accent/20 text-accent'
+          : 'border-macos-dark-border text-macos-dark-text-tertiary'
+        }
+      `}
+    >
+      Move to top level
+    </div>
+  );
+}
+
 export function Sidebar() {
   const {
     currentView,
@@ -521,11 +554,6 @@ export function Sidebar() {
     const interval = setInterval(fetchTrashInfo, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  const { setNodeRef: setSidebarDropRef, isOver: isOverSidebar } = useDroppable({
-    id: 'sidebar-root',
-    data: { type: 'sidebar-root' },
-  });
 
   const rootAlbums = albums
     .filter((a) => a.parentId === null)
@@ -665,10 +693,7 @@ export function Sidebar() {
         </div>
 
         {/* Albums section */}
-        <div
-          ref={setSidebarDropRef}
-          className={`flex-1 overflow-y-auto p-3 ${isOverSidebar ? 'bg-accent/20' : ''}`}
-        >
+        <div className="flex-1 overflow-y-auto p-3">
           <div className="flex items-center justify-between mb-2 px-2">
             <h3 className="text-11 font-medium text-macos-dark-text-tertiary uppercase tracking-wide">
               Albums
@@ -703,6 +728,9 @@ export function Sidebar() {
               No albums yet. Click + to create one.
             </p>
           )}
+
+          {/* Drop zone for moving albums to top level */}
+          <TopLevelDropZone />
         </div>
 
         {/* New album button at bottom */}
