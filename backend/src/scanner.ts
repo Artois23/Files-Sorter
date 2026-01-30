@@ -89,6 +89,7 @@ export const scanner = {
         isSupported,
         format,
         albumId: null,
+        vaultId: null,
         status: 'normal' as const,
       };
 

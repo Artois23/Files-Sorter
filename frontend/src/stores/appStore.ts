@@ -7,10 +7,18 @@ import type {
   ScanProgress,
   OrganizeProgress,
   ViewType,
-  OrganizeSummary
+  OrganizeSummary,
+  Vault
 } from '../types';
 
 interface AppStore {
+  // Vaults
+  vaults: Vault[];
+  setVaults: (vaults: Vault[]) => void;
+  addVault: (vault: Vault) => void;
+  updateVault: (id: string, updates: Partial<Vault>) => void;
+  removeVault: (id: string) => void;
+
   // Images
   images: ImageFile[];
   setImages: (images: ImageFile[]) => void;
@@ -30,7 +38,8 @@ interface AppStore {
   // View state
   currentView: ViewType;
   currentAlbumId: string | null;
-  setView: (view: ViewType, albumId?: string | null) => void;
+  currentVaultId: string | null;
+  setView: (view: ViewType, albumId?: string | null, vaultId?: string | null) => void;
 
   // Selection
   selectedImageIds: Set<string>;
@@ -90,12 +99,32 @@ interface AppStore {
   getVisibleImages: () => ImageFile[];
   getImageById: (id: string) => ImageFile | undefined;
   getAlbumById: (id: string) => Album | undefined;
+  getVaultById: (id: string) => Vault | undefined;
   getChildAlbums: (parentId: string | null) => Album[];
+  getAlbumsByVault: (vaultId: string) => Album[];
+  getVisibleVaults: () => Vault[];
 }
 
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
+      // Vaults
+      vaults: [],
+      setVaults: (vaults) => set({ vaults }),
+      addVault: (vault) => set((state) => ({
+        vaults: [...state.vaults, vault]
+      })),
+      updateVault: (id, updates) => set((state) => ({
+        vaults: state.vaults.map((v) =>
+          v.id === id ? { ...v, ...updates } : v
+        ),
+      })),
+      removeVault: (id) => set((state) => ({
+        vaults: state.vaults.filter((v) => v.id !== id),
+        albums: state.albums.filter((a) => a.vaultId !== id),
+        images: state.images.filter((img) => img.vaultId !== id),
+      })),
+
       // Images
       images: [],
       setImages: (images) => set({ images }),
@@ -152,9 +181,11 @@ export const useAppStore = create<AppStore>()(
       // View state
       currentView: 'all',
       currentAlbumId: null,
-      setView: (view, albumId = null) => set({
+      currentVaultId: null,
+      setView: (view, albumId = null, vaultId = null) => set({
         currentView: view,
         currentAlbumId: albumId,
+        currentVaultId: vaultId,
         selectedImageIds: new Set(),
         lastSelectedImageId: null,
       }),
@@ -288,37 +319,60 @@ export const useAppStore = create<AppStore>()(
 
       // Computed
       getVisibleImages: () => {
-        const { images, currentView, currentAlbumId, hideAssigned, sortBy, sortDirection } = get();
+        const { images, vaults, currentView, currentAlbumId, currentVaultId, hideAssigned, sortBy, sortDirection } = get();
+
+        // Get visible vault IDs
+        const visibleVaultIds = new Set(
+          vaults.filter((v) => v.isVisible).map((v) => v.id)
+        );
+
+        // Filter by visible vaults first (unless viewing trash/not-sure which could be from any vault)
+        const vaultFiltered = currentView === 'trash' || currentView === 'not-sure'
+          ? images
+          : vaults.length > 0
+            ? images.filter((img) => !img.vaultId || visibleVaultIds.has(img.vaultId))
+            : images;
 
         let filtered: ImageFile[];
         switch (currentView) {
           case 'all':
             if (hideAssigned) {
-              filtered = images.filter(
+              filtered = vaultFiltered.filter(
                 (img) => !img.albumId && img.status === 'normal'
               );
             } else {
-              filtered = images.filter((img) => img.status === 'normal');
+              filtered = vaultFiltered.filter((img) => img.status === 'normal');
             }
             break;
           case 'orphans':
-            filtered = images.filter(
+            filtered = vaultFiltered.filter(
               (img) => !img.albumId && img.status === 'normal'
             );
             break;
           case 'trash':
-            filtered = images.filter((img) => img.status === 'trash');
+            filtered = vaultFiltered.filter((img) => img.status === 'trash');
             break;
           case 'not-sure':
-            filtered = images.filter((img) => img.status === 'not-sure');
+            filtered = vaultFiltered.filter((img) => img.status === 'not-sure');
             break;
           case 'album':
-            filtered = images.filter(
+            filtered = vaultFiltered.filter(
               (img) => img.albumId === currentAlbumId && img.status === 'normal'
             );
             break;
+          case 'vault':
+            if (hideAssigned) {
+              filtered = images.filter(
+                (img) => img.vaultId === currentVaultId && !img.albumId && img.status === 'normal'
+              );
+            } else {
+              filtered = images.filter(
+                (img) => img.vaultId === currentVaultId && img.status === 'normal'
+              );
+            }
+            break;
           default:
-            filtered = images;
+            filtered = vaultFiltered;
         }
 
         // Sort filtered images
@@ -336,9 +390,18 @@ export const useAppStore = create<AppStore>()(
       },
       getImageById: (id) => get().images.find((img) => img.id === id),
       getAlbumById: (id) => get().albums.find((album) => album.id === id),
+      getVaultById: (id) => get().vaults.find((vault) => vault.id === id),
       getChildAlbums: (parentId) =>
         get().albums
           .filter((album) => album.parentId === parentId)
+          .sort((a, b) => a.order - b.order),
+      getAlbumsByVault: (vaultId) =>
+        get().albums
+          .filter((album) => album.vaultId === vaultId)
+          .sort((a, b) => a.order - b.order),
+      getVisibleVaults: () =>
+        get().vaults
+          .filter((vault) => vault.isVisible)
           .sort((a, b) => a.order - b.order),
     }),
     {

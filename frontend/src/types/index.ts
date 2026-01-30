@@ -1,3 +1,11 @@
+export interface Vault {
+  id: string;
+  path: string;
+  displayName: string;
+  isVisible: boolean;
+  order: number;
+}
+
 export interface ImageFile {
   id: string;
   path: string;
@@ -10,6 +18,7 @@ export interface ImageFile {
   isSupported: boolean;
   format: string;
   albumId: string | null;
+  vaultId: string | null;
   status: 'normal' | 'trash' | 'not-sure';
 }
 
@@ -17,6 +26,7 @@ export interface Album {
   id: string;
   name: string;
   parentId: string | null;
+  vaultId: string;
   order: number;
   imageCount: number;
 }
@@ -65,11 +75,12 @@ export interface Settings {
   thumbnailRefreshScope: 'all' | 'visible';
 }
 
-export type ViewType = 'all' | 'orphans' | 'trash' | 'not-sure' | 'album';
+export type ViewType = 'all' | 'orphans' | 'trash' | 'not-sure' | 'album' | 'vault';
 
 export interface AppState {
   currentView: ViewType;
   currentAlbumId: string | null;
+  currentVaultId: string | null;
   selectedImageIds: Set<string>;
   lastSelectedImageId: string | null;
   thumbnailSize: number;

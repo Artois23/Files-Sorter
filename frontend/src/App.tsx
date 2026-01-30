@@ -42,13 +42,11 @@ import type { ImageFile } from './types';
 
 function App() {
   const {
-    images,
     setImages,
     albums,
     setAlbums,
     reorderAlbums,
     updateSettings,
-    settings,
     selectedImageIds,
     selectImage,
     updateImages,
@@ -58,6 +56,15 @@ function App() {
   } = useAppStore();
 
   const [draggedImage, setDraggedImage] = useState<ImageFile | null>(null);
+  // Persist welcome dismissal in sessionStorage (resets on browser close, persists on refresh)
+  const [forceHideWelcome, setForceHideWelcome] = useState(() => {
+    return sessionStorage.getItem('hideWelcome') === 'true';
+  });
+
+  const handleDismissWelcome = () => {
+    sessionStorage.setItem('hideWelcome', 'true');
+    setForceHideWelcome(true);
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -84,14 +91,16 @@ function App() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [fetchedImages, albums, serverSettings] = await Promise.all([
+        const [fetchedImages, albums, serverSettings, vaults] = await Promise.all([
           api.getImages(),
           api.getAlbums(),
           api.getSettings(),
+          api.getVaults(),
         ]);
         setImages(fetchedImages);
         setAlbums(albums);
         updateSettings(serverSettings);
+        useAppStore.getState().setVaults(vaults);
       } catch (error) {
         console.error('Failed to load initial data:', error);
       }
@@ -219,7 +228,17 @@ function App() {
     }
   };
 
-  const showWelcome = images.length === 0 && !settings.sourceFolder;
+  // Always show welcome screen on launch, until user dismisses it
+  const showWelcome = !forceHideWelcome;
+
+  // Show full-screen welcome if not dismissed
+  if (showWelcome) {
+    return (
+      <div className="h-screen flex flex-col overflow-hidden bg-macos-dark-bg-1">
+        <WelcomeScreen onSkip={handleDismissWelcome} />
+      </div>
+    );
+  }
 
   return (
     <DndContext
@@ -233,8 +252,7 @@ function App() {
 
         <div className="flex-1 flex overflow-hidden">
           <Sidebar />
-
-          {showWelcome ? <WelcomeScreen /> : <ImageGrid />}
+          <ImageGrid />
         </div>
 
         <StatusBar />

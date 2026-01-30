@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
-import type { ImageFile, Album, Settings } from './types.js';
+import type { ImageFile, Album, Settings, Vault } from './types.js';
 
 const DATA_DIR = path.join(os.homedir(), '.image-sorter');
 const DB_PATH = path.join(DATA_DIR, 'data.db');
@@ -23,6 +23,15 @@ db.pragma('journal_mode = WAL');
 
 // Initialize schema
 db.exec(`
+  CREATE TABLE IF NOT EXISTS vaults (
+    id TEXT PRIMARY KEY,
+    path TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    is_visible INTEGER NOT NULL DEFAULT 1,
+    "order" INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS images (
     id TEXT PRIMARY KEY,
     path TEXT UNIQUE NOT NULL,
@@ -35,6 +44,7 @@ db.exec(`
     is_supported INTEGER NOT NULL DEFAULT 1,
     format TEXT NOT NULL,
     album_id TEXT,
+    vault_id TEXT,
     status TEXT NOT NULL DEFAULT 'normal',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -43,6 +53,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     parent_id TEXT,
+    vault_id TEXT,
     "order" INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -58,7 +69,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_albums_parent ON albums(parent_id);
 `);
 
-// Default settings
+// Migration: Add vault_id column to existing tables if not present
+try {
+  db.exec(`ALTER TABLE images ADD COLUMN vault_id TEXT`);
+} catch {
+  // Column already exists
+}
+
+try {
+  db.exec(`ALTER TABLE albums ADD COLUMN vault_id TEXT`);
+} catch {
+  // Column already exists
+}
+
+// Create indexes on vault_id columns after migration
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_images_vault ON images(vault_id);
+  CREATE INDEX IF NOT EXISTS idx_albums_vault ON albums(vault_id);
+`);
+
+// Default settings (removed sourceFolder and vaultFolder - now using multi-vault system)
 const DEFAULT_SETTINGS: Settings = {
   sourceFolder: null,
   vaultFolder: null,
@@ -82,12 +112,94 @@ for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
 export const database = {
   getThumbnailsDir: () => THUMBNAILS_DIR,
 
+  // Vaults
+  getAllVaults: (): Vault[] => {
+    const rows = db.prepare(`
+      SELECT id, path, display_name as displayName, is_visible as isVisible, "order"
+      FROM vaults
+      ORDER BY "order"
+    `).all() as Array<{
+      id: string;
+      path: string;
+      displayName: string;
+      isVisible: number;
+      order: number;
+    }>;
+
+    return rows.map(row => ({
+      ...row,
+      isVisible: Boolean(row.isVisible),
+    }));
+  },
+
+  getVaultById: (id: string): Vault | null => {
+    const row = db.prepare(`
+      SELECT id, path, display_name as displayName, is_visible as isVisible, "order"
+      FROM vaults WHERE id = ?
+    `).get(id) as {
+      id: string;
+      path: string;
+      displayName: string;
+      isVisible: number;
+      order: number;
+    } | undefined;
+
+    if (!row) return null;
+
+    return {
+      ...row,
+      isVisible: Boolean(row.isVisible),
+    };
+  },
+
+  insertVault: (vault: Vault): void => {
+    db.prepare(`
+      INSERT INTO vaults (id, path, display_name, is_visible, "order")
+      VALUES (?, ?, ?, ?, ?)
+    `).run(vault.id, vault.path, vault.displayName, vault.isVisible ? 1 : 0, vault.order);
+  },
+
+  updateVault: (id: string, updates: Partial<Vault>): void => {
+    const setClauses: string[] = [];
+    const params: (string | number | null)[] = [];
+
+    if (updates.path !== undefined) {
+      setClauses.push('path = ?');
+      params.push(updates.path);
+    }
+    if (updates.displayName !== undefined) {
+      setClauses.push('display_name = ?');
+      params.push(updates.displayName);
+    }
+    if (updates.isVisible !== undefined) {
+      setClauses.push('is_visible = ?');
+      params.push(updates.isVisible ? 1 : 0);
+    }
+    if (updates.order !== undefined) {
+      setClauses.push('"order" = ?');
+      params.push(updates.order);
+    }
+
+    if (setClauses.length === 0) return;
+
+    params.push(id);
+    db.prepare(`UPDATE vaults SET ${setClauses.join(', ')} WHERE id = ?`).run(...params);
+  },
+
+  deleteVault: (id: string): void => {
+    // Delete all albums and images in this vault first
+    db.prepare('DELETE FROM images WHERE vault_id = ?').run(id);
+    db.prepare('DELETE FROM albums WHERE vault_id = ?').run(id);
+    db.prepare('DELETE FROM vaults WHERE id = ?').run(id);
+  },
+
   // Images
   getAllImages: (): ImageFile[] => {
     const rows = db.prepare(`
       SELECT id, path, filename, file_size as fileSize, width, height,
              modified_date as modifiedDate, thumbnail_path as thumbnailPath,
-             is_supported as isSupported, format, album_id as albumId, status
+             is_supported as isSupported, format, album_id as albumId,
+             vault_id as vaultId, status
       FROM images
       ORDER BY filename
     `).all() as Array<{
@@ -102,6 +214,7 @@ export const database = {
       isSupported: number;
       format: string;
       albumId: string | null;
+      vaultId: string | null;
       status: string;
     }>;
 
@@ -116,7 +229,8 @@ export const database = {
     const row = db.prepare(`
       SELECT id, path, filename, file_size as fileSize, width, height,
              modified_date as modifiedDate, thumbnail_path as thumbnailPath,
-             is_supported as isSupported, format, album_id as albumId, status
+             is_supported as isSupported, format, album_id as albumId,
+             vault_id as vaultId, status
       FROM images WHERE id = ?
     `).get(id) as {
       id: string;
@@ -130,6 +244,7 @@ export const database = {
       isSupported: number;
       format: string;
       albumId: string | null;
+      vaultId: string | null;
       status: string;
     } | undefined;
 
@@ -145,8 +260,8 @@ export const database = {
   insertImage: (image: ImageFile): void => {
     db.prepare(`
       INSERT OR REPLACE INTO images
-      (id, path, filename, file_size, width, height, modified_date, thumbnail_path, is_supported, format, album_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, path, filename, file_size, width, height, modified_date, thumbnail_path, is_supported, format, album_id, vault_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       image.id,
       image.path,
@@ -159,6 +274,7 @@ export const database = {
       image.isSupported ? 1 : 0,
       image.format,
       image.albumId,
+      image.vaultId,
       image.status
     );
   },
@@ -170,6 +286,10 @@ export const database = {
     if (updates.albumId !== undefined) {
       setClauses.push('album_id = ?');
       params.push(updates.albumId);
+    }
+    if (updates.vaultId !== undefined) {
+      setClauses.push('vault_id = ?');
+      params.push(updates.vaultId);
     }
     if (updates.status !== undefined) {
       setClauses.push('status = ?');
@@ -208,7 +328,7 @@ export const database = {
   // Albums
   getAllAlbums: (): Album[] => {
     return db.prepare(`
-      SELECT id, name, parent_id as parentId, "order"
+      SELECT id, name, parent_id as parentId, vault_id as vaultId, "order"
       FROM albums
       ORDER BY "order"
     `).all() as Album[];
@@ -216,16 +336,25 @@ export const database = {
 
   getAlbumById: (id: string): Album | null => {
     return db.prepare(`
-      SELECT id, name, parent_id as parentId, "order"
+      SELECT id, name, parent_id as parentId, vault_id as vaultId, "order"
       FROM albums WHERE id = ?
     `).get(id) as Album | null;
   },
 
+  getAlbumsByVault: (vaultId: string): Album[] => {
+    return db.prepare(`
+      SELECT id, name, parent_id as parentId, vault_id as vaultId, "order"
+      FROM albums
+      WHERE vault_id = ?
+      ORDER BY "order"
+    `).all(vaultId) as Album[];
+  },
+
   insertAlbum: (album: Album): void => {
     db.prepare(`
-      INSERT INTO albums (id, name, parent_id, "order")
-      VALUES (?, ?, ?, ?)
-    `).run(album.id, album.name, album.parentId, album.order);
+      INSERT INTO albums (id, name, parent_id, vault_id, "order")
+      VALUES (?, ?, ?, ?, ?)
+    `).run(album.id, album.name, album.parentId, album.vaultId, album.order);
   },
 
   updateAlbum: (id: string, updates: Partial<Album>): void => {
@@ -239,6 +368,10 @@ export const database = {
     if (updates.parentId !== undefined) {
       setClauses.push('parent_id = ?');
       params.push(updates.parentId);
+    }
+    if (updates.vaultId !== undefined) {
+      setClauses.push('vault_id = ?');
+      params.push(updates.vaultId);
     }
     if (updates.order !== undefined) {
       setClauses.push('"order" = ?');

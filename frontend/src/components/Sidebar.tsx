@@ -10,11 +10,14 @@ import {
   GripVertical,
   Eraser,
   RefreshCw,
+  Eye,
+  EyeOff,
+  FolderOpen,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
-import { useDroppable, useDraggable, useDndContext } from '@dnd-kit/core';
-import type { Album } from '../types';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
+import type { Album, Vault } from '../types';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -24,6 +27,7 @@ interface SidebarItemProps {
   onClick: () => void;
   isDropTarget?: boolean;
   onDrop?: () => void;
+  actionButton?: React.ReactNode;
 }
 
 function SidebarItem({
@@ -34,6 +38,7 @@ function SidebarItem({
   onClick,
   isDropTarget,
   onDrop,
+  actionButton,
 }: SidebarItemProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `sidebar-${label}`,
@@ -56,6 +61,7 @@ function SidebarItem({
     >
       <span className="w-5 h-5 flex items-center justify-center">{icon}</span>
       <span className="flex-1 text-13 truncate">{label}</span>
+      {actionButton}
       <span className="text-11 text-macos-dark-text-tertiary tabular-nums">
         {count}
       </span>
@@ -445,59 +451,162 @@ function ContextMenu({
   );
 }
 
-// Albums header that acts as drop zone for moving albums to top level
-function AlbumsHeader({ onCreateAlbum, onSync, isSyncing, hasVault }: {
-  onCreateAlbum: () => void;
+// Vault section with nested albums
+interface VaultSectionProps {
+  vault: Vault;
+  isActive: boolean;
+  onNavigate: () => void;
+  onToggleVisibility: () => void;
+  onRemove: () => void;
   onSync: () => void;
+  onCreateAlbum: () => void;
   isSyncing: boolean;
-  hasVault: boolean;
-}) {
-  const { active } = useDndContext();
+}
 
-  const { setNodeRef, isOver } = useDroppable({
-    id: 'sidebar-root',
-    data: { type: 'sidebar-root' },
-  });
+function VaultSection({
+  vault,
+  isActive,
+  onNavigate,
+  onToggleVisibility,
+  onRemove,
+  onSync,
+  onCreateAlbum,
+  isSyncing,
+}: VaultSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(true);
+  const [isHovered, setIsHovered] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
 
-  // Check if we're dragging an album
-  const activeData = active?.data?.current;
-  const isDraggingAlbum = activeData?.type === 'album';
+  const albums = useAppStore((state) => state.albums);
+  const images = useAppStore((state) => state.images);
+
+  // Get root albums for this vault
+  const rootAlbums = albums
+    .filter((a) => a.vaultId === vault.id && a.parentId === null)
+    .sort((a, b) => a.order - b.order);
+
+  // Count images in this vault
+  const imageCount = images.filter(
+    (img) => img.vaultId === vault.id && img.status === 'normal'
+  ).length;
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  };
+
+  const folderName = vault.path.split('/').pop() || vault.displayName;
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`
-        flex items-center justify-between mb-2 px-2 py-1 -mx-1 rounded-md transition-colors
-        ${isOver && isDraggingAlbum ? 'bg-accent/30 ring-2 ring-accent' : ''}
-      `}
-    >
-      <h3 className="text-11 font-medium text-macos-dark-text-tertiary uppercase tracking-wide">
-        Albums {isOver && isDraggingAlbum && <span className="normal-case">(drop to move here)</span>}
-      </h3>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={onSync}
-          disabled={isSyncing || !hasVault}
-          className={`w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white disabled:opacity-30 ${isSyncing ? 'animate-spin' : ''}`}
-          title="Sync with vault folders"
+    <>
+      <div className="mb-1">
+        {/* Vault header row */}
+        <div
+          onContextMenu={handleContextMenu}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          className={`
+            flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-colors
+            ${!vault.isVisible ? 'opacity-50' : ''}
+            ${isActive ? 'bg-accent text-white' : 'hover:bg-macos-dark-bg-3'}
+          `}
+          onClick={onNavigate}
         >
-          <RefreshCw size={12} />
-        </button>
         <button
-          onClick={onCreateAlbum}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white"
-          title="Create album"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsExpanded(!isExpanded);
+          }}
+          className="w-4 h-4 flex items-center justify-center"
         >
-          <Plus size={14} />
+          <ChevronRight
+            size={12}
+            className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          />
         </button>
+        <FolderOpen size={16} className={`flex-shrink-0 ${isActive ? 'text-white' : 'text-accent'}`} />
+        <span className="flex-1 text-13 font-medium truncate" title={vault.path}>
+          {folderName}
+        </span>
+
+        {isHovered && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onSync();
+              }}
+              disabled={isSyncing}
+              className={`w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-1 text-macos-dark-text-tertiary hover:text-white disabled:opacity-30 ${isSyncing ? 'animate-spin' : ''}`}
+              title="Sync this vault"
+            >
+              <RefreshCw size={12} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreateAlbum();
+              }}
+              className="w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-1 text-macos-dark-text-tertiary hover:text-white"
+              title="Create album in this vault"
+            >
+              <Plus size={12} />
+            </button>
+          </>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleVisibility();
+          }}
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-1 text-macos-dark-text-tertiary hover:text-white"
+          title={vault.isVisible ? 'Hide vault' : 'Show vault'}
+        >
+          {vault.isVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+        </button>
+        <span className="text-11 text-macos-dark-text-tertiary tabular-nums min-w-[24px] text-right">
+          {imageCount}
+        </span>
       </div>
-    </div>
+
+        {/* Nested albums */}
+        {isExpanded && (
+          <div className="ml-4">
+            {rootAlbums.map((album) => (
+              <AlbumItemWrapper key={album.id} album={album} depth={0} />
+            ))}
+            {rootAlbums.length === 0 && vault.isVisible && (
+              <p className="text-11 text-macos-dark-text-tertiary px-2 py-1 italic">
+                No albums
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {showContextMenu && (
+        <ContextMenu
+          x={contextMenuPos.x}
+          y={contextMenuPos.y}
+          onClose={() => setShowContextMenu(false)}
+          items={[
+            { label: vault.isVisible ? 'Hide Vault' : 'Show Vault', onClick: onToggleVisibility },
+            { label: 'Sync Vault', onClick: onSync },
+            { type: 'separator' },
+            { label: 'Remove Vault', onClick: onRemove, danger: true },
+          ]}
+        />
+      )}
+    </>
   );
 }
 
 export function Sidebar() {
   const {
     currentView,
+    currentVaultId,
     setView,
     albums,
     images,
@@ -508,7 +617,13 @@ export function Sidebar() {
     sidebarCollapsed,
     selectedImageIds,
     updateImages,
-    settings,
+    vaults,
+    setVaults,
+    addVault,
+    updateVault,
+    removeVault,
+    hideAssigned,
+    setHideAssigned,
   } = useAppStore();
 
   const [isResizing, setIsResizing] = useState(false);
@@ -516,10 +631,24 @@ export function Sidebar() {
   const [showEmptyTrashConfirm, setShowEmptyTrashConfirm] = useState(false);
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncingVaultId, setSyncingVaultId] = useState<string | null>(null);
 
-  // Sync vault folders with albums and refresh images
-  const syncVault = useCallback(async () => {
-    if (!settings.vaultFolder || isSyncing) return;
+  // Load vaults on mount
+  useEffect(() => {
+    const loadVaults = async () => {
+      try {
+        const loadedVaults = await api.getVaults();
+        setVaults(loadedVaults);
+      } catch (error) {
+        console.error('Failed to load vaults:', error);
+      }
+    };
+    loadVaults();
+  }, [setVaults]);
+
+  // Sync all vaults
+  const syncAllVaults = useCallback(async () => {
+    if (isSyncing || vaults.length === 0) return;
 
     setIsSyncing(true);
     try {
@@ -530,31 +659,102 @@ export function Sidebar() {
       setAlbums(syncedAlbums);
       useAppStore.getState().setImages(refreshedImages);
     } catch (error) {
-      console.error('Failed to sync vault:', error);
+      console.error('Failed to sync vaults:', error);
     } finally {
       setIsSyncing(false);
     }
-  }, [settings.vaultFolder, isSyncing, setAlbums]);
+  }, [vaults.length, isSyncing, setAlbums]);
+
+  // Sync specific vault
+  const syncSingleVault = useCallback(async (vaultId: string) => {
+    if (syncingVaultId) return;
+
+    setSyncingVaultId(vaultId);
+    try {
+      const [syncedAlbums, refreshedImages] = await Promise.all([
+        api.syncVault(vaultId),
+        api.getImages(),
+      ]);
+      // Merge synced albums with existing albums from other vaults
+      const otherAlbums = albums.filter(a => a.vaultId !== vaultId);
+      setAlbums([...otherAlbums, ...syncedAlbums]);
+      useAppStore.getState().setImages(refreshedImages);
+    } catch (error) {
+      console.error('Failed to sync vault:', error);
+    } finally {
+      setSyncingVaultId(null);
+    }
+  }, [syncingVaultId, albums, setAlbums]);
 
   // Auto-sync every 3 minutes
   useEffect(() => {
-    if (!settings.vaultFolder) return;
+    if (vaults.length === 0) return;
 
-    const interval = setInterval(syncVault, 3 * 60 * 1000);
+    const interval = setInterval(syncAllVaults, 3 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [settings.vaultFolder, syncVault]);
+  }, [vaults.length, syncAllVaults]);
 
   // Sync on app focus
   useEffect(() => {
     const handleFocus = () => {
-      if (settings.vaultFolder) {
-        syncVault();
+      if (vaults.length > 0) {
+        syncAllVaults();
       }
     };
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [settings.vaultFolder, syncVault]);
+  }, [vaults.length, syncAllVaults]);
+
+  // Add vault handler
+  const handleAddVault = async () => {
+    try {
+      const result = await api.selectFolder();
+      if (result?.path) {
+        const newVault = await api.addVault(result.path);
+        addVault(newVault);
+        // Refresh albums and images after adding vault
+        const [syncedAlbums, refreshedImages] = await Promise.all([
+          api.getAlbums(),
+          api.getImages(),
+        ]);
+        setAlbums(syncedAlbums);
+        useAppStore.getState().setImages(refreshedImages);
+      }
+    } catch (error) {
+      console.error('Failed to add vault:', error);
+      alert(error instanceof Error ? error.message : 'Failed to add vault');
+    }
+  };
+
+  // Toggle vault visibility
+  const handleToggleVaultVisibility = async (vaultId: string) => {
+    const vault = vaults.find(v => v.id === vaultId);
+    if (!vault) return;
+
+    try {
+      await api.updateVault(vaultId, { isVisible: !vault.isVisible });
+      updateVault(vaultId, { isVisible: !vault.isVisible });
+    } catch (error) {
+      console.error('Failed to toggle vault visibility:', error);
+    }
+  };
+
+  // Remove vault
+  const handleRemoveVault = async (vaultId: string) => {
+    const vault = vaults.find(v => v.id === vaultId);
+    if (!vault) return;
+
+    if (confirm(`Remove vault "${vault.displayName}"? This will remove it from the app but not delete any files.`)) {
+      try {
+        await api.removeVault(vaultId);
+        removeVault(vaultId);
+      } catch (error) {
+        console.error('Failed to remove vault:', error);
+        alert(error instanceof Error ? error.message : 'Failed to remove vault');
+      }
+    }
+  };
 
   // Fetch trash info periodically
   useEffect(() => {
@@ -572,21 +772,32 @@ export function Sidebar() {
     return () => clearInterval(interval);
   }, []);
 
-  const rootAlbums = albums
-    .filter((a) => a.parentId === null)
-    .sort((a, b) => a.order - b.order);
+  // Calculate visible vault IDs for filtering
+  const visibleVaultIds = new Set(
+    vaults.filter((v) => v.isVisible).map((v) => v.id)
+  );
 
-  const allCount = images.filter((img) => img.status === 'normal').length;
-  const orphanCount = images.filter(
-    (img) => !img.albumId && img.status === 'normal'
+  // Helper to check if image is from a visible vault
+  const isImageVisible = (img: typeof images[0]) =>
+    vaults.length === 0 || !img.vaultId || visibleVaultIds.has(img.vaultId);
+
+  // Image counts - respect vault visibility
+  const totalCount = images.filter(
+    (img) => img.status === 'normal' && isImageVisible(img)
   ).length;
+  const orphanCount = images.filter(
+    (img) => !img.albumId && img.status === 'normal' && isImageVisible(img)
+  ).length;
+  // "All Images" count depends on hideAssigned filter
+  const allCount = hideAssigned ? orphanCount : totalCount;
+  const assignedCount = totalCount - orphanCount;
   const trashCount = images.filter((img) => img.status === 'trash').length;
   const notSureCount = images.filter((img) => img.status === 'not-sure').length;
 
-  const handleCreateAlbum = async () => {
+  // Create album in a specific vault
+  const handleCreateAlbumInVault = async (vaultId: string) => {
     try {
-      // Use vault-centric API to create folder on disk
-      const newAlbum = await api.createVaultFolder('Untitled Folder', null);
+      const newAlbum = await api.createVaultFolder('Untitled Folder', null, vaultId);
       addAlbum(newAlbum);
     } catch (error) {
       console.error('Failed to create album:', error);
@@ -680,6 +891,22 @@ export function Sidebar() {
               count={allCount}
               isActive={currentView === 'all'}
               onClick={() => setView('all')}
+              actionButton={
+                assignedCount > 0 ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setHideAssigned(!hideAssigned);
+                    }}
+                    className={`w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-1 ${
+                      hideAssigned ? 'text-accent' : 'text-macos-dark-text-tertiary'
+                    }`}
+                    title={hideAssigned ? `Show ${assignedCount} assigned images` : `Hide ${assignedCount} assigned images`}
+                  >
+                    {hideAssigned ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                ) : undefined
+              }
             />
             <SidebarItem
               icon={<Inbox size={16} />}
@@ -709,37 +936,36 @@ export function Sidebar() {
           </div>
         </div>
 
-        {/* Albums section */}
+        {/* Vaults with nested albums */}
         <div className="flex-1 overflow-y-auto p-3">
-          <AlbumsHeader
-            onCreateAlbum={handleCreateAlbum}
-            onSync={syncVault}
-            isSyncing={isSyncing}
-            hasVault={!!settings.vaultFolder}
-          />
+          {vaults.map((vault) => (
+            <VaultSection
+              key={vault.id}
+              vault={vault}
+              isActive={currentView === 'vault' && currentVaultId === vault.id}
+              onNavigate={() => setView('vault', null, vault.id)}
+              onToggleVisibility={() => handleToggleVaultVisibility(vault.id)}
+              onRemove={() => handleRemoveVault(vault.id)}
+              onSync={() => syncSingleVault(vault.id)}
+              onCreateAlbum={() => handleCreateAlbumInVault(vault.id)}
+              isSyncing={syncingVaultId === vault.id}
+            />
+          ))}
 
-          <div className="space-y-0.5">
-            {rootAlbums.map((album) => (
-              <AlbumItemWrapper key={album.id} album={album} depth={0} />
-            ))}
-          </div>
-
-          {rootAlbums.length === 0 && (
-            <p className="text-13 text-macos-dark-text-tertiary px-2 py-4">
-              No albums yet. Click + to create one.
-            </p>
-          )}
-        </div>
-
-        {/* New album button at bottom */}
-        <div className="p-3 border-t border-macos-dark-border">
+          {/* Add vault button */}
           <button
-            onClick={handleCreateAlbum}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-macos-dark-text-tertiary hover:bg-macos-dark-bg-3 hover:text-white transition-colors"
+            onClick={handleAddVault}
+            className="w-full flex items-center gap-2 px-3 py-2 mt-2 rounded-md text-macos-dark-text-tertiary hover:bg-macos-dark-bg-3 hover:text-white transition-colors"
           >
             <Plus size={16} />
-            <span className="text-13">New Album</span>
+            <span className="text-13">Add Vault</span>
           </button>
+
+          {vaults.length === 0 && (
+            <p className="text-13 text-macos-dark-text-tertiary px-2 py-4 text-center">
+              Add a vault folder to get started
+            </p>
+          )}
         </div>
 
         {/* Resize handle */}

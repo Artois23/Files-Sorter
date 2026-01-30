@@ -1,4 +1,4 @@
-import type { ImageFile, Album, Settings, OrganizeSummary } from '../types';
+import type { ImageFile, Album, Settings, OrganizeSummary, Vault } from '../types';
 
 const API_BASE = '/api';
 
@@ -157,15 +157,45 @@ export const api = {
     return fetchJson('/data/clear', { method: 'POST' });
   },
 
-  // Vault-centric operations
-  async syncVault(): Promise<Album[]> {
-    return fetchJson('/vault/sync', { method: 'POST' });
+  // Vaults
+  async getVaults(): Promise<Vault[]> {
+    return fetchJson('/vaults');
   },
 
-  async createVaultFolder(name: string, parentId: string | null = null): Promise<Album> {
+  async getVault(id: string): Promise<Vault> {
+    return fetchJson(`/vaults/${id}`);
+  },
+
+  async addVault(path: string, displayName?: string): Promise<Vault> {
+    return fetchJson('/vaults', {
+      method: 'POST',
+      body: JSON.stringify({ path, displayName }),
+    });
+  },
+
+  async updateVault(id: string, updates: Partial<Vault>): Promise<Vault> {
+    return fetchJson(`/vaults/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async removeVault(id: string): Promise<void> {
+    return fetchJson(`/vaults/${id}`, { method: 'DELETE' });
+  },
+
+  // Vault-centric operations
+  async syncVault(vaultId?: string): Promise<Album[]> {
+    return fetchJson('/vault/sync', {
+      method: 'POST',
+      body: JSON.stringify({ vaultId }),
+    });
+  },
+
+  async createVaultFolder(name: string, parentId: string | null = null, vaultId?: string): Promise<Album> {
     return fetchJson('/vault/folders', {
       method: 'POST',
-      body: JSON.stringify({ name, parentId }),
+      body: JSON.stringify({ name, parentId, vaultId }),
     });
   },
 

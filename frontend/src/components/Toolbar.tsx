@@ -8,8 +8,7 @@ import {
   ChevronRight,
   Filter,
   Check,
-  Eye,
-  EyeOff,
+  FileText,
   RefreshCw,
   MousePointerClick,
 } from 'lucide-react';
@@ -20,6 +19,8 @@ export function Toolbar() {
   const {
     currentView,
     currentAlbumId,
+    currentVaultId,
+    setView,
     toggleSidebar,
     thumbnailSize,
     setThumbnailSize,
@@ -30,6 +31,7 @@ export function Toolbar() {
     setShowSettings,
     albums,
     images,
+    vaults,
     sortBy,
     sortDirection,
     setSortBy,
@@ -40,6 +42,14 @@ export function Toolbar() {
     setSelectMode,
     selectedImageIds,
   } = useAppStore();
+
+  // Calculate visible image count (respects vault visibility)
+  const visibleVaultIds = new Set(
+    vaults.filter((v) => v.isVisible).map((v) => v.id)
+  );
+  const visibleImageCount = images.filter(
+    (img) => vaults.length === 0 || !img.vaultId || visibleVaultIds.has(img.vaultId)
+  ).length;
 
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -66,6 +76,15 @@ export function Toolbar() {
 
   const currentAlbum = currentAlbumId
     ? albums.find((a) => a.id === currentAlbumId)
+    : null;
+
+  const currentVault = currentVaultId
+    ? vaults.find((v) => v.id === currentVaultId)
+    : null;
+
+  // Get vault for current album (for breadcrumb)
+  const albumVault = currentAlbum?.vaultId
+    ? vaults.find((v) => v.id === currentAlbum.vaultId)
     : null;
 
   // Build breadcrumb for nested albums
@@ -99,19 +118,10 @@ export function Toolbar() {
         return 'Not Sure';
       case 'album':
         return currentAlbum?.name || 'Album';
+      case 'vault':
+        return currentVault?.displayName || 'Vault';
       default:
         return '';
-    }
-  };
-
-  const handleSelectSource = async () => {
-    try {
-      const result = await api.selectFolder();
-      if (result?.path) {
-        await api.startScan(result.path);
-      }
-    } catch (error) {
-      console.error('Failed to select folder:', error);
     }
   };
 
@@ -154,23 +164,39 @@ export function Toolbar() {
           <Menu size={18} />
         </button>
 
-        <button
-          onClick={handleSelectSource}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary"
-          title="Choose source folder"
-        >
+        <div className="flex items-center gap-1.5 px-3 py-1.5 text-macos-dark-text-secondary">
           <FolderOpen size={16} />
-          <span className="text-13 max-w-[280px] truncate">
-            {settings.sourceFolder
-              ? `${settings.sourceFolder.split('/').pop()} (${images.length} image${images.length !== 1 ? 's' : ''})`
-              : 'Choose Source'}
+          <span className="text-13">
+            {vaults.length > 0
+              ? `${visibleImageCount} image${visibleImageCount !== 1 ? 's' : ''}`
+              : 'No vaults'}
           </span>
-        </button>
+        </div>
       </div>
 
       {/* Center section */}
       <div className="flex-1 flex items-center justify-center">
-        {breadcrumb && breadcrumb.length > 1 ? (
+        {currentView === 'album' && albumVault ? (
+          // Album view with vault breadcrumb
+          <div className="flex items-center gap-1 text-15">
+            <button
+              onClick={() => setView('vault', null, albumVault.id)}
+              className="text-macos-dark-text-tertiary hover:text-white transition-colors"
+            >
+              {albumVault.displayName}
+            </button>
+            {breadcrumb?.map((album) => (
+              <span key={album.id} className="flex items-center gap-1">
+                <ChevronRight
+                  size={14}
+                  className="text-macos-dark-text-tertiary"
+                />
+                <span className="font-medium">{album.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : breadcrumb && breadcrumb.length > 1 ? (
+          // Nested album breadcrumb
           <div className="flex items-center gap-1 text-15">
             {breadcrumb.map((album, i) => (
               <span key={album.id} className="flex items-center gap-1">
@@ -293,7 +319,7 @@ export function Toolbar() {
           `}
           title={settings.showFilenameOverlay ? 'Hide filenames' : 'Show filenames'}
         >
-          {settings.showFilenameOverlay ? <Eye size={18} /> : <EyeOff size={18} />}
+          <FileText size={18} />
         </button>
 
         {/* Thumbnail size slider */}

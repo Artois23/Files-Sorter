@@ -177,15 +177,31 @@ app.get('/api/albums', (_req, res) => {
 });
 
 app.post('/api/albums', (req, res) => {
-  const { name, parentId } = req.body;
+  const { name, parentId, vaultId } = req.body;
 
   const albums = database.getAllAlbums();
   const maxOrder = Math.max(0, ...albums.map(a => a.order));
+
+  // Get vaultId from parent, provided value, or first available vault
+  let resolvedVaultId = vaultId;
+  if (!resolvedVaultId && parentId) {
+    const parent = albums.find(a => a.id === parentId);
+    if (parent) {
+      resolvedVaultId = parent.vaultId;
+    }
+  }
+  if (!resolvedVaultId) {
+    const vaults = database.getAllVaults();
+    if (vaults.length > 0) {
+      resolvedVaultId = vaults[0].id;
+    }
+  }
 
   const album = {
     id: uuid(),
     name: name || 'Untitled Album',
     parentId: parentId || null,
+    vaultId: resolvedVaultId,
     order: maxOrder + 1,
   };
 
@@ -224,10 +240,75 @@ app.post('/api/albums/reorder', (req, res) => {
   res.json({ message: 'Albums reordered' });
 });
 
-// Vault-centric operations
-app.post('/api/vault/sync', async (_req, res) => {
+// Vaults CRUD
+app.get('/api/vaults', (_req, res) => {
+  const vaults = database.getAllVaults();
+  res.json(vaults);
+});
+
+app.get('/api/vaults/:id', (req, res) => {
+  const vaultRecord = database.getVaultById(req.params.id);
+  if (!vaultRecord) {
+    return res.status(404).json({ message: 'Vault not found' });
+  }
+  res.json(vaultRecord);
+});
+
+app.post('/api/vaults', async (req, res) => {
+  const { path: folderPath, displayName } = req.body;
+
+  if (!folderPath) {
+    return res.status(400).json({ message: 'path is required' });
+  }
+
   try {
-    const albums = await vault.syncAlbumsWithVault();
+    const newVault = await vault.addVault(folderPath, displayName);
+    res.json(newVault);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to add vault';
+    res.status(500).json({ message });
+  }
+});
+
+app.patch('/api/vaults/:id', async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+
+  try {
+    const updatedVault = await vault.updateVault(id, updates);
+    res.json(updatedVault);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update vault';
+    res.status(500).json({ message });
+  }
+});
+
+app.delete('/api/vaults/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    await vault.removeVault(id);
+    res.json({ message: 'Vault removed' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to remove vault';
+    res.status(500).json({ message });
+  }
+});
+
+// Vault-centric operations
+app.post('/api/vault/sync', async (req, res) => {
+  const { vaultId } = req.body;
+
+  try {
+    let albums;
+    if (vaultId) {
+      // Sync specific vault
+      albums = await vault.syncVault(vaultId);
+    } else {
+      // Sync all vaults
+      albums = await vault.syncAllVaults();
+    }
+
     const images = database.getAllImages();
     const albumsWithCount = albums.map(album => ({
       ...album,
@@ -241,10 +322,10 @@ app.post('/api/vault/sync', async (_req, res) => {
 });
 
 app.post('/api/vault/folders', async (req, res) => {
-  const { name, parentId } = req.body;
+  const { name, parentId, vaultId } = req.body;
 
   try {
-    const album = await vault.createFolder(name || 'Untitled Folder', parentId || null);
+    const album = await vault.createFolder(name || 'Untitled Folder', parentId || null, vaultId);
     res.json({ ...album, imageCount: 0 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create folder';
