@@ -5,6 +5,9 @@ import {
   LayoutGrid,
   FolderOpen,
   ChevronRight,
+  ArrowDownAZ,
+  ArrowUpAZ,
+  Calendar,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
@@ -24,6 +27,10 @@ export function Toolbar() {
     setOrganizeSummary,
     albums,
     images,
+    sortBy,
+    sortDirection,
+    setSortBy,
+    setSortDirection,
   } = useAppStore();
 
   const currentAlbum = currentAlbumId
@@ -108,6 +115,33 @@ export function Toolbar() {
     (img) => img.albumId && img.status === 'normal'
   ).length;
 
+  const handleCycleSort = () => {
+    // Cycle: Date ↓ → Date ↑ → Name ↓ → Name ↑ → Date ↓
+    if (sortBy === 'date' && sortDirection === 'desc') {
+      setSortDirection('asc');
+    } else if (sortBy === 'date' && sortDirection === 'asc') {
+      setSortBy('name');
+      setSortDirection('desc');
+    } else if (sortBy === 'name' && sortDirection === 'desc') {
+      setSortDirection('asc');
+    } else {
+      setSortBy('date');
+      setSortDirection('desc');
+    }
+  };
+
+  const getSortIcon = () => {
+    if (sortBy === 'date') {
+      return <Calendar size={14} />;
+    }
+    return sortDirection === 'desc' ? <ArrowDownAZ size={14} /> : <ArrowUpAZ size={14} />;
+  };
+
+  const getSortLabel = () => {
+    const dir = sortDirection === 'desc' ? '↓' : '↑';
+    return sortBy === 'date' ? `Date ${dir}` : `Name ${dir}`;
+  };
+
   return (
     <header className="h-[52px] bg-macos-dark-bg-3 border-b border-macos-dark-border flex items-center px-3 gap-3">
       {/* Left section */}
@@ -126,9 +160,9 @@ export function Toolbar() {
           title="Choose source folder"
         >
           <FolderOpen size={16} />
-          <span className="text-13 max-w-[200px] truncate">
+          <span className="text-13 max-w-[280px] truncate">
             {settings.sourceFolder
-              ? settings.sourceFolder.split('/').pop()
+              ? `${settings.sourceFolder.split('/').pop()} (${images.length} image${images.length !== 1 ? 's' : ''})`
               : 'Choose Source'}
           </span>
         </button>
@@ -192,6 +226,16 @@ export function Toolbar() {
             )}
           </label>
         )}
+
+        {/* Sort button */}
+        <button
+          onClick={handleCycleSort}
+          className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary"
+          title={`Sort by ${sortBy} (${sortDirection === 'desc' ? 'descending' : 'ascending'})`}
+        >
+          {getSortIcon()}
+          <span className="text-13">{getSortLabel()}</span>
+        </button>
 
         {/* Thumbnail size slider */}
         <div className="flex items-center gap-2">

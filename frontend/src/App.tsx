@@ -69,8 +69,12 @@ function App() {
     if (overData?.type === 'album' && selectedImageIds.size > 0) {
       const albumId = overData.albumId;
       const ids = Array.from(selectedImageIds);
-      await api.updateImages(ids, { albumId, status: 'normal' });
-      updateImages(ids, { albumId, status: 'normal' });
+      try {
+        await api.updateImages(ids, { albumId, status: 'normal' });
+        updateImages(ids, { albumId, status: 'normal' });
+      } catch (error) {
+        console.error('Failed to move images to album:', error);
+      }
     }
 
     // Handle drop on sidebar items

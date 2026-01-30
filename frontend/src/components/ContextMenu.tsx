@@ -43,33 +43,53 @@ export function ContextMenu() {
   const { x, y, imageIds } = contextMenu;
 
   const handleMoveToAlbum = async (albumId: string) => {
-    await api.updateImages(imageIds, { albumId, status: 'normal' });
-    updateImages(imageIds, { albumId, status: 'normal' });
+    try {
+      await api.updateImages(imageIds, { albumId, status: 'normal' });
+      updateImages(imageIds, { albumId, status: 'normal' });
+    } catch (error) {
+      console.error('Failed to move images to album:', error);
+    }
     setContextMenu(null);
   };
 
   const handleMarkTrash = async () => {
-    await api.updateImages(imageIds, { status: 'trash', albumId: null });
-    updateImages(imageIds, { status: 'trash', albumId: null });
+    try {
+      await api.updateImages(imageIds, { status: 'trash', albumId: null });
+      updateImages(imageIds, { status: 'trash', albumId: null });
+    } catch (error) {
+      console.error('Failed to mark images as trash:', error);
+    }
     setContextMenu(null);
   };
 
   const handleMarkNotSure = async () => {
-    await api.updateImages(imageIds, { status: 'not-sure', albumId: null });
-    updateImages(imageIds, { status: 'not-sure', albumId: null });
+    try {
+      await api.updateImages(imageIds, { status: 'not-sure', albumId: null });
+      updateImages(imageIds, { status: 'not-sure', albumId: null });
+    } catch (error) {
+      console.error('Failed to mark images as not sure:', error);
+    }
     setContextMenu(null);
   };
 
   const handleRemoveFromAlbum = async () => {
-    await api.updateImages(imageIds, { albumId: null });
-    updateImages(imageIds, { albumId: null });
+    try {
+      await api.updateImages(imageIds, { albumId: null });
+      updateImages(imageIds, { albumId: null });
+    } catch (error) {
+      console.error('Failed to remove images from album:', error);
+    }
     setContextMenu(null);
   };
 
   const handleShowInFinder = async () => {
-    const image = getImageById(imageIds[0]);
-    if (image) {
-      await api.showInFinder(image.path);
+    try {
+      const image = getImageById(imageIds[0]);
+      if (image) {
+        await api.showInFinder(image.path);
+      }
+    } catch (error) {
+      console.error('Failed to show in Finder:', error);
     }
     setContextMenu(null);
   };

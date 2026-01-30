@@ -105,9 +105,14 @@ function AlbumItem({
   const [isExpanded, setIsExpanded] = useState(true);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const childAlbums = useAppStore((state) => state.getChildAlbums(album.id));
+  // Select albums array directly, then filter (avoids infinite loop from selector returning new array)
+  const albums = useAppStore((state) => state.albums);
+  const childAlbums = albums
+    .filter((a) => a.parentId === album.id)
+    .sort((a, b) => a.order - b.order);
 
   const {
     attributes,
@@ -121,6 +126,11 @@ function AlbumItem({
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: `album-${album.id}`,
     data: { type: 'album', albumId: album.id },
+  });
+
+  const { setNodeRef: setReparentRef, isOver: isOverForReparent } = useDroppable({
+    id: `album-reparent-${album.id}`,
+    data: { type: 'album-reparent', albumId: album.id },
   });
 
   const style = {
@@ -153,6 +163,7 @@ function AlbumItem({
   const combinedRef = (node: HTMLDivElement | null) => {
     setSortableRef(node);
     setDroppableRef(node);
+    setReparentRef(node);
   };
 
   return (
@@ -164,14 +175,16 @@ function AlbumItem({
           flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-colors
           ${isActive
             ? 'bg-accent text-white'
-            : isOver
-              ? 'bg-accent/30'
+            : isOver || isOverForReparent
+              ? 'bg-accent/50 ring-2 ring-accent'
               : 'hover:bg-macos-dark-bg-3'
           }
         `}
         onClick={onSelect}
         onDoubleClick={handleStartRename}
         onContextMenu={handleContextMenu}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         <div
           {...attributes}
@@ -220,6 +233,19 @@ function AlbumItem({
           <span className="flex-1 text-13 truncate">{album.name}</span>
         )}
 
+        {isHovered && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreateSubAlbum();
+            }}
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-macos-dark-bg-3 text-macos-dark-text-tertiary hover:text-white flex-shrink-0"
+            title="Create sub-album"
+          >
+            <Plus size={12} />
+          </button>
+        )}
+
         <span className="text-11 text-macos-dark-text-tertiary tabular-nums">
           {imageCount}
         </span>
@@ -256,8 +282,12 @@ function AlbumItemWrapper({ album, depth }: { album: Album; depth: number }) {
   ).length;
 
   const handleRename = async (name: string) => {
-    await api.updateAlbum(album.id, { name });
-    updateAlbum(album.id, { name });
+    try {
+      await api.updateAlbum(album.id, { name });
+      updateAlbum(album.id, { name });
+    } catch (error) {
+      console.error('Failed to rename album:', error);
+    }
   };
 
   const handleDelete = async () => {
@@ -266,17 +296,25 @@ function AlbumItemWrapper({ album, depth }: { album: Album; depth: number }) {
         `Delete album '${album.name}'? The ${imageCount} images inside will become orphans.`
       )
     ) {
-      await api.deleteAlbum(album.id);
-      deleteAlbum(album.id);
-      if (currentAlbumId === album.id) {
-        setView('all');
+      try {
+        await api.deleteAlbum(album.id);
+        deleteAlbum(album.id);
+        if (currentAlbumId === album.id) {
+          setView('all');
+        }
+      } catch (error) {
+        console.error('Failed to delete album:', error);
       }
     }
   };
 
   const handleCreateSubAlbum = async () => {
-    const newAlbum = await api.createAlbum('Untitled Album', album.id);
-    addAlbum(newAlbum);
+    try {
+      const newAlbum = await api.createAlbum('Untitled Album', album.id);
+      addAlbum(newAlbum);
+    } catch (error) {
+      console.error('Failed to create sub-album:', error);
+    }
   };
 
   return (
@@ -362,6 +400,11 @@ export function Sidebar() {
 
   const [isResizing, setIsResizing] = useState(false);
 
+  const { setNodeRef: setSidebarDropRef, isOver: isOverSidebar } = useDroppable({
+    id: 'sidebar-root',
+    data: { type: 'sidebar-root' },
+  });
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -381,8 +424,12 @@ export function Sidebar() {
   const notSureCount = images.filter((img) => img.status === 'not-sure').length;
 
   const handleCreateAlbum = async () => {
-    const newAlbum = await api.createAlbum('Untitled Album', null);
-    addAlbum(newAlbum);
+    try {
+      const newAlbum = await api.createAlbum('Untitled Album', null);
+      addAlbum(newAlbum);
+    } catch (error) {
+      console.error('Failed to create album:', error);
+    }
   };
 
   const handleDragStart = (_event: DragStartEvent) => {
@@ -393,18 +440,33 @@ export function Sidebar() {
     // Could show drop preview here
   };
 
+  // Helper to check if an album is a descendant of another
+  const isDescendantOf = (albumId: string, potentialAncestorId: string): boolean => {
+    let current = albums.find((a) => a.id === albumId);
+    while (current) {
+      if (current.parentId === potentialAncestorId) return true;
+      current = current.parentId ? albums.find((a) => a.id === current!.parentId) : undefined;
+    }
+    return false;
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
     if (!over) return;
 
-    // Handle image drop onto album
     const overData = over.data.current;
+
+    // Handle image drop onto album
     if (overData?.type === 'album' && selectedImageIds.size > 0) {
       const albumId = overData.albumId;
       const ids = Array.from(selectedImageIds);
-      await api.updateImages(ids, { albumId, status: 'normal' });
-      updateImages(ids, { albumId, status: 'normal' });
+      try {
+        await api.updateImages(ids, { albumId, status: 'normal' });
+        updateImages(ids, { albumId, status: 'normal' });
+      } catch (error) {
+        console.error('Failed to move images to album:', error);
+      }
       return;
     }
 
@@ -414,7 +476,72 @@ export function Sidebar() {
       return;
     }
 
-    // Handle album reorder
+    // Check if we're dragging an album
+    const draggedAlbum = albums.find((a) => a.id === active.id);
+    if (!draggedAlbum) return;
+
+    // Handle album drop onto sidebar-root (move to top level)
+    if (overData?.type === 'sidebar-root') {
+      if (draggedAlbum.parentId !== null) {
+        // Calculate new order (add to end of root albums)
+        const maxRootOrder = Math.max(...rootAlbums.map((a) => a.order), -1);
+        const updatedAlbum = { ...draggedAlbum, parentId: null, order: maxRootOrder + 1 };
+        const updatedAlbums = albums.map((a) =>
+          a.id === draggedAlbum.id ? updatedAlbum : a
+        );
+        reorderAlbums(updatedAlbums);
+        try {
+          await api.reorderAlbums(
+            updatedAlbums.map((a) => ({
+              id: a.id,
+              order: a.order,
+              parentId: a.parentId,
+            }))
+          );
+        } catch (error) {
+          console.error('Failed to move album to top level:', error);
+        }
+      }
+      return;
+    }
+
+    // Handle album drop onto another album (reparent)
+    if (overData?.type === 'album-reparent') {
+      const targetAlbumId = overData.albumId;
+
+      // Prevent dropping on self
+      if (targetAlbumId === draggedAlbum.id) return;
+
+      // Prevent dropping on descendants (circular hierarchy)
+      if (isDescendantOf(targetAlbumId, draggedAlbum.id)) return;
+
+      // Prevent dropping on current parent (no change needed)
+      if (draggedAlbum.parentId === targetAlbumId) return;
+
+      // Calculate new order (add to end of target's children)
+      const siblingAlbums = albums.filter((a) => a.parentId === targetAlbumId);
+      const maxSiblingOrder = Math.max(...siblingAlbums.map((a) => a.order), -1);
+
+      const updatedAlbum = { ...draggedAlbum, parentId: targetAlbumId, order: maxSiblingOrder + 1 };
+      const updatedAlbums = albums.map((a) =>
+        a.id === draggedAlbum.id ? updatedAlbum : a
+      );
+      reorderAlbums(updatedAlbums);
+      try {
+        await api.reorderAlbums(
+          updatedAlbums.map((a) => ({
+            id: a.id,
+            order: a.order,
+            parentId: a.parentId,
+          }))
+        );
+      } catch (error) {
+        console.error('Failed to reparent album:', error);
+      }
+      return;
+    }
+
+    // Handle album reorder (same level)
     if (active.id !== over.id) {
       const oldIndex = albums.findIndex((a) => a.id === active.id);
       const newIndex = albums.findIndex((a) => a.id === over.id);
@@ -426,13 +553,17 @@ export function Sidebar() {
 
         const updatedAlbums = newAlbums.map((a, i) => ({ ...a, order: i }));
         reorderAlbums(updatedAlbums);
-        await api.reorderAlbums(
-          updatedAlbums.map((a) => ({
-            id: a.id,
-            order: a.order,
-            parentId: a.parentId,
-          }))
-        );
+        try {
+          await api.reorderAlbums(
+            updatedAlbums.map((a) => ({
+              id: a.id,
+              order: a.order,
+              parentId: a.parentId,
+            }))
+          );
+        } catch (error) {
+          console.error('Failed to reorder albums:', error);
+        }
       }
     }
   };
@@ -459,16 +590,24 @@ export function Sidebar() {
   const handleMoveToTrash = async () => {
     if (selectedImageIds.size > 0) {
       const ids = Array.from(selectedImageIds);
-      await api.updateImages(ids, { status: 'trash', albumId: null });
-      updateImages(ids, { status: 'trash', albumId: null });
+      try {
+        await api.updateImages(ids, { status: 'trash', albumId: null });
+        updateImages(ids, { status: 'trash', albumId: null });
+      } catch (error) {
+        console.error('Failed to move images to trash:', error);
+      }
     }
   };
 
   const handleMoveToNotSure = async () => {
     if (selectedImageIds.size > 0) {
       const ids = Array.from(selectedImageIds);
-      await api.updateImages(ids, { status: 'not-sure', albumId: null });
-      updateImages(ids, { status: 'not-sure', albumId: null });
+      try {
+        await api.updateImages(ids, { status: 'not-sure', albumId: null });
+        updateImages(ids, { status: 'not-sure', albumId: null });
+      } catch (error) {
+        console.error('Failed to mark images as not sure:', error);
+      }
     }
   };
 
@@ -530,7 +669,10 @@ export function Sidebar() {
         </div>
 
         {/* Albums section */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div
+          ref={setSidebarDropRef}
+          className={`flex-1 overflow-y-auto p-3 ${isOverSidebar ? 'bg-accent/20' : ''}`}
+        >
           <div className="flex items-center justify-between mb-2 px-2">
             <h3 className="text-11 font-medium text-macos-dark-text-tertiary uppercase tracking-wide">
               Albums

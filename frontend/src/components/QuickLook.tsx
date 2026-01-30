@@ -46,28 +46,40 @@ export function QuickLook() {
 
   const handleOpenPreview = async () => {
     if (currentImage) {
-      await api.openWithPreview(currentImage.path);
+      try {
+        await api.openWithPreview(currentImage.path);
+      } catch (error) {
+        console.error('Failed to open with Preview:', error);
+      }
     }
   };
 
   const handleMarkTrash = async () => {
     if (currentImage) {
-      await api.updateImages([currentImage.id], { status: 'trash', albumId: null });
-      updateImages([currentImage.id], { status: 'trash', albumId: null });
-      if (hasNext) {
-        goToNext();
-      } else if (hasPrev) {
-        goToPrev();
-      } else {
-        close();
+      try {
+        await api.updateImages([currentImage.id], { status: 'trash', albumId: null });
+        updateImages([currentImage.id], { status: 'trash', albumId: null });
+        if (hasNext) {
+          goToNext();
+        } else if (hasPrev) {
+          goToPrev();
+        } else {
+          close();
+        }
+      } catch (error) {
+        console.error('Failed to mark as trash:', error);
       }
     }
   };
 
   const handleMarkNotSure = async () => {
     if (currentImage) {
-      await api.updateImages([currentImage.id], { status: 'not-sure', albumId: null });
-      updateImages([currentImage.id], { status: 'not-sure', albumId: null });
+      try {
+        await api.updateImages([currentImage.id], { status: 'not-sure', albumId: null });
+        updateImages([currentImage.id], { status: 'not-sure', albumId: null });
+      } catch (error) {
+        console.error('Failed to mark as not sure:', error);
+      }
     }
   };
 
@@ -110,7 +122,7 @@ export function QuickLook() {
   const filmstripImages = visibleImages.slice(filmstripStart, filmstripEnd);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/85 backdrop-blur-sm"
@@ -118,7 +130,15 @@ export function QuickLook() {
       />
 
       {/* Modal container */}
-      <div className="relative flex-1 flex flex-col m-6">
+      <div
+        className="relative flex flex-col"
+        style={{
+          width: '75vw',
+          height: '75vh',
+          maxWidth: 'calc(100vw - 48px)',
+          maxHeight: 'calc(100vh - 48px)'
+        }}
+      >
         {/* Top bar */}
         <div className="flex items-center justify-between bg-macos-dark-bg-2 rounded-t-xl px-4 py-3 relative z-10">
           <div className="flex items-center gap-3">

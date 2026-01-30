@@ -103,6 +103,64 @@ app.patch('/api/images/batch', (req, res) => {
   res.json({ message: 'Images updated' });
 });
 
+app.patch('/api/images/:id/rename', async (req, res) => {
+  const { id } = req.params;
+  const { filename } = req.body;
+
+  if (!filename || typeof filename !== 'string') {
+    return res.status(400).json({ message: 'filename is required' });
+  }
+
+  // Validate filename - no slashes, not empty after trim, valid characters
+  const trimmedFilename = filename.trim();
+  if (!trimmedFilename) {
+    return res.status(400).json({ message: 'Filename cannot be empty' });
+  }
+  if (trimmedFilename.includes('/') || trimmedFilename.includes('\\')) {
+    return res.status(400).json({ message: 'Filename cannot contain slashes' });
+  }
+  // Check for other invalid characters (null bytes, etc.)
+  if (/[\x00-\x1f]/.test(trimmedFilename)) {
+    return res.status(400).json({ message: 'Filename contains invalid characters' });
+  }
+
+  const image = database.getImageById(id);
+  if (!image) {
+    return res.status(404).json({ message: 'Image not found' });
+  }
+
+  const oldPath = image.path;
+  const dir = path.dirname(oldPath);
+  const newPath = path.join(dir, trimmedFilename);
+
+  // Check if same as current
+  if (newPath === oldPath) {
+    return res.json({ id: image.id, path: image.path, filename: image.filename });
+  }
+
+  // Check if target already exists
+  try {
+    await fs.access(newPath);
+    // If we reach here, file exists
+    return res.status(409).json({ message: 'A file with this name already exists' });
+  } catch {
+    // File doesn't exist, good to proceed
+  }
+
+  // Rename the file on disk
+  try {
+    await fs.rename(oldPath, newPath);
+  } catch (error) {
+    console.error('Failed to rename file:', error);
+    return res.status(500).json({ message: 'Failed to rename file on disk' });
+  }
+
+  // Update database
+  database.updateImagePath(id, newPath, trimmedFilename);
+
+  res.json({ id, path: newPath, filename: trimmedFilename });
+});
+
 // Albums
 app.get('/api/albums', (_req, res) => {
   const albums = database.getAllAlbums();

@@ -49,6 +49,10 @@ interface AppStore {
   toggleSidebar: () => void;
   hideAssigned: boolean;
   setHideAssigned: (hide: boolean) => void;
+  sortBy: 'date' | 'name';
+  sortDirection: 'asc' | 'desc';
+  setSortBy: (sortBy: 'date' | 'name') => void;
+  setSortDirection: (direction: 'asc' | 'desc') => void;
 
   // Settings
   settings: Settings;
@@ -75,6 +79,10 @@ interface AppStore {
   // Context menu
   contextMenu: { x: number; y: number; imageIds: string[] } | null;
   setContextMenu: (menu: { x: number; y: number; imageIds: string[] } | null) => void;
+
+  // Inline editing
+  editingImageId: string | null;
+  setEditingImageId: (id: string | null) => void;
 
   // Computed
   getVisibleImages: () => ImageFile[];
@@ -211,6 +219,10 @@ export const useAppStore = create<AppStore>()(
       })),
       hideAssigned: false,
       setHideAssigned: (hide) => set({ hideAssigned: hide }),
+      sortBy: 'date',
+      sortDirection: 'desc',
+      setSortBy: (sortBy) => set({ sortBy }),
+      setSortDirection: (direction) => set({ sortDirection: direction }),
 
       // Settings
       settings: {
@@ -265,33 +277,57 @@ export const useAppStore = create<AppStore>()(
       contextMenu: null,
       setContextMenu: (menu) => set({ contextMenu: menu }),
 
+      // Inline editing
+      editingImageId: null,
+      setEditingImageId: (id) => set({ editingImageId: id }),
+
       // Computed
       getVisibleImages: () => {
-        const { images, currentView, currentAlbumId, hideAssigned } = get();
+        const { images, currentView, currentAlbumId, hideAssigned, sortBy, sortDirection } = get();
 
+        let filtered: ImageFile[];
         switch (currentView) {
           case 'all':
             if (hideAssigned) {
-              return images.filter(
+              filtered = images.filter(
                 (img) => !img.albumId && img.status === 'normal'
               );
+            } else {
+              filtered = images.filter((img) => img.status === 'normal');
             }
-            return images.filter((img) => img.status === 'normal');
+            break;
           case 'orphans':
-            return images.filter(
+            filtered = images.filter(
               (img) => !img.albumId && img.status === 'normal'
             );
+            break;
           case 'trash':
-            return images.filter((img) => img.status === 'trash');
+            filtered = images.filter((img) => img.status === 'trash');
+            break;
           case 'not-sure':
-            return images.filter((img) => img.status === 'not-sure');
+            filtered = images.filter((img) => img.status === 'not-sure');
+            break;
           case 'album':
-            return images.filter(
+            filtered = images.filter(
               (img) => img.albumId === currentAlbumId && img.status === 'normal'
             );
+            break;
           default:
-            return images;
+            filtered = images;
         }
+
+        // Sort filtered images
+        const sorted = [...filtered].sort((a, b) => {
+          let comparison: number;
+          if (sortBy === 'date') {
+            comparison = a.modifiedDate.localeCompare(b.modifiedDate);
+          } else {
+            comparison = a.filename.localeCompare(b.filename);
+          }
+          return sortDirection === 'asc' ? comparison : -comparison;
+        });
+
+        return sorted;
       },
       getImageById: (id) => get().images.find((img) => img.id === id),
       getAlbumById: (id) => get().albums.find((album) => album.id === id),
@@ -307,6 +343,8 @@ export const useAppStore = create<AppStore>()(
         thumbnailSize: state.thumbnailSize,
         sidebarWidth: state.sidebarWidth,
         hideAssigned: state.hideAssigned,
+        sortBy: state.sortBy,
+        sortDirection: state.sortDirection,
       }),
     }
   )

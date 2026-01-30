@@ -57,6 +57,13 @@ export const api = {
     });
   },
 
+  async renameImage(id: string, filename: string): Promise<{ id: string; path: string; filename: string }> {
+    return fetchJson(`/images/${id}/rename`, {
+      method: 'PATCH',
+      body: JSON.stringify({ filename }),
+    });
+  },
+
   // Albums
   async getAlbums(): Promise<Album[]> {
     return fetchJson('/albums');

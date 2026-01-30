@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Folder,
@@ -6,29 +6,103 @@ import {
   Trash2,
   FileQuestion,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useDraggable } from '@dnd-kit/core';
+import { api } from '../utils/api';
 import type { ImageFile } from '../types';
 
 interface ThumbnailProps {
   image: ImageFile;
   isSelected: boolean;
   size: number;
+  isEditing: boolean;
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
-  onDoubleClick: () => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
 }
 
 function Thumbnail({
   image,
   isSelected,
   size,
+  isEditing,
   onClick,
   onContextMenu,
-  onDoubleClick,
+  onStartEdit,
+  onCancelEdit,
 }: ThumbnailProps) {
-  const { settings } = useAppStore();
+  const { settings, updateImage } = useAppStore();
+  const [editValue, setEditValue] = useState(image.filename);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset edit value when editing starts
+  useEffect(() => {
+    if (isEditing) {
+      setEditValue(image.filename);
+      setError(null);
+      // Focus and select text
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+          // Select filename without extension
+          const dotIndex = image.filename.lastIndexOf('.');
+          if (dotIndex > 0) {
+            inputRef.current.setSelectionRange(0, dotIndex);
+          } else {
+            inputRef.current.select();
+          }
+        }
+      }, 0);
+    }
+  }, [isEditing, image.filename]);
+
+  // Clear error after 2 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => setError(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+
+  const handleRename = async () => {
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === image.filename) {
+      onCancelEdit();
+      return;
+    }
+
+    setIsRenaming(true);
+    setError(null);
+
+    try {
+      const result = await api.renameImage(image.id, trimmed);
+      updateImage(image.id, { path: result.path, filename: result.filename });
+      onCancelEdit();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Rename failed';
+      setError(message);
+      setIsRenaming(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      handleRename();
+    } else if (e.key === 'Escape') {
+      onCancelEdit();
+    }
+  };
+
+  const handleFilenameDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onStartEdit();
+  };
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: image.id,
@@ -84,7 +158,6 @@ function Thumbnail({
       }}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      onDoubleClick={onDoubleClick}
     >
       {image.isSupported ? (
         <img
@@ -111,9 +184,36 @@ function Thumbnail({
         </div>
       )}
 
-      {settings.showFilenameOverlay && (
+      {settings.showFilenameOverlay && size >= 120 && (
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
-          <p className="text-11 text-white truncate">{image.filename}</p>
+          {isEditing ? (
+            <div className="relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={handleRename}
+                onKeyDown={handleKeyDown}
+                onClick={(e) => e.stopPropagation()}
+                disabled={isRenaming}
+                className="w-full text-11 text-white bg-black/50 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-accent"
+              />
+              {isRenaming && (
+                <Loader2 size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-white animate-spin" />
+              )}
+            </div>
+          ) : (
+            <p
+              className="text-11 text-white truncate cursor-text"
+              onDoubleClick={handleFilenameDoubleClick}
+            >
+              {image.filename}
+            </p>
+          )}
+          {error && (
+            <p className="text-10 text-red-400 mt-0.5 truncate">{error}</p>
+          )}
         </div>
       )}
     </div>
@@ -132,6 +232,8 @@ export function ImageGrid() {
     currentView,
     hideAssigned,
     images,
+    editingImageId,
+    setEditingImageId,
   } = useAppStore();
 
   const visibleImages = getVisibleImages();
@@ -353,9 +455,11 @@ export function ImageGrid() {
                     image={image}
                     isSelected={selectedImageIds.has(image.id)}
                     size={thumbnailSize}
+                    isEditing={editingImageId === image.id}
                     onClick={(e) => handleClick(e, image.id)}
                     onContextMenu={(e) => handleContextMenu(e, image.id)}
-                    onDoubleClick={() => setQuickLookImageId(image.id)}
+                    onStartEdit={() => setEditingImageId(image.id)}
+                    onCancelEdit={() => setEditingImageId(null)}
                   />
                 ))}
               </div>
