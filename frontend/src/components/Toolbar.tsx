@@ -24,8 +24,6 @@ export function Toolbar() {
     toggleSidebar,
     thumbnailSize,
     setThumbnailSize,
-    hideAssigned,
-    setHideAssigned,
     settings,
     updateSettings,
     setShowSettings,
@@ -125,10 +123,6 @@ export function Toolbar() {
     }
   };
 
-  const assignedCount = images.filter(
-    (img) => img.albumId && img.status === 'normal'
-  ).length;
-
   const handleRegenerateThumbnails = async () => {
     setIsRegenerating(true);
     try {
@@ -149,8 +143,8 @@ export function Toolbar() {
     }
   };
 
-  // Check if any filter is active
-  const hasActiveFilter = hideAssigned || sortBy !== 'date' || sortDirection !== 'desc';
+  // Check if any sort option is non-default
+  const hasActiveFilter = sortBy !== 'date' || sortDirection !== 'desc';
 
   return (
     <header className="h-[52px] bg-macos-dark-bg-3 border-b border-macos-dark-border flex items-center px-3 gap-3">
@@ -289,19 +283,6 @@ export function Toolbar() {
                 {sortBy === 'name' && sortDirection === 'desc' && <Check size={14} />}
               </button>
 
-              <div className="h-px bg-macos-dark-border my-1" />
-
-              {/* Filter options */}
-              <div className="px-3 py-1.5 text-11 text-macos-dark-text-tertiary uppercase tracking-wide">
-                Filter
-              </div>
-              <button
-                onClick={() => setHideAssigned(!hideAssigned)}
-                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white flex items-center justify-between"
-              >
-                <span>Hide Assigned{assignedCount > 0 ? ` (${assignedCount})` : ''}</span>
-                {hideAssigned && <Check size={14} />}
-              </button>
             </div>
           )}
         </div>
