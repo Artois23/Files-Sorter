@@ -53,6 +53,8 @@ function App() {
     selectImage,
     updateImages,
     getImageById,
+    setSelectMode,
+    clearSelection,
   } = useAppStore();
 
   const [draggedImage, setDraggedImage] = useState<ImageFile | null>(null);
@@ -142,6 +144,9 @@ function App() {
 
           if (successIds.length > 0) {
             updateImages(successIds, { albumId, status: 'normal' });
+            // Turn off select mode and clear selection after successful drop
+            setSelectMode(false);
+            clearSelection();
           }
 
           // Show error if any failures
@@ -160,6 +165,9 @@ function App() {
       // Handle image drop on sidebar items (trash, not-sure)
       if (overData?.type === 'sidebar-item' && overData?.onDrop) {
         overData.onDrop();
+        // Turn off select mode and clear selection after drop
+        setSelectMode(false);
+        clearSelection();
         return;
       }
     } else {

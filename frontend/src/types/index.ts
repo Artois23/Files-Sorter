@@ -62,6 +62,7 @@ export interface Settings {
   confirmDestructiveActions: boolean;
   trashHandling: 'system' | 'vault';
   hideAssigned: boolean;
+  thumbnailRefreshScope: 'all' | 'visible';
 }
 
 export type ViewType = 'all' | 'orphans' | 'trash' | 'not-sure' | 'album';

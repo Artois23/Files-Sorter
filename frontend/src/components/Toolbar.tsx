@@ -10,6 +10,8 @@ import {
   Check,
   Eye,
   EyeOff,
+  RefreshCw,
+  MousePointerClick,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
@@ -32,9 +34,15 @@ export function Toolbar() {
     sortDirection,
     setSortBy,
     setSortDirection,
+    getVisibleImages,
+    setImages,
+    selectMode,
+    setSelectMode,
+    selectedImageIds,
   } = useAppStore();
 
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
@@ -111,6 +119,26 @@ export function Toolbar() {
     (img) => img.albumId && img.status === 'normal'
   ).length;
 
+  const handleRegenerateThumbnails = async () => {
+    setIsRegenerating(true);
+    try {
+      const scope = settings.thumbnailRefreshScope;
+      const imageIds = scope === 'visible'
+        ? getVisibleImages().map((img) => img.id)
+        : 'all';
+
+      await api.regenerateThumbnails(imageIds, thumbnailSize);
+
+      // Refresh images to get new thumbnail URLs
+      const refreshedImages = await api.getImages();
+      setImages(refreshedImages);
+    } catch (error) {
+      console.error('Failed to regenerate thumbnails:', error);
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
   // Check if any filter is active
   const hasActiveFilter = hideAssigned || sortBy !== 'date' || sortDirection !== 'desc';
 
@@ -171,6 +199,18 @@ export function Toolbar() {
 
       {/* Right section */}
       <div className="flex items-center gap-3">
+        {/* Select mode toggle */}
+        <button
+          onClick={() => setSelectMode(!selectMode)}
+          className={`
+            w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2
+            ${selectMode ? 'text-accent bg-accent/20' : 'text-macos-dark-text-secondary'}
+          `}
+          title={selectMode ? `Select mode ON (${selectedImageIds.size} selected)` : 'Select mode (click images to select multiple)'}
+        >
+          <MousePointerClick size={18} />
+        </button>
+
         {/* Filter dropdown */}
         <div className="relative">
           <button
@@ -268,6 +308,14 @@ export function Toolbar() {
             className="w-48 h-1 bg-macos-dark-bg-1 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer"
           />
           <LayoutGrid size={18} className="text-macos-dark-text-tertiary" />
+          <button
+            onClick={handleRegenerateThumbnails}
+            disabled={isRegenerating || images.length === 0}
+            className={`w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary disabled:opacity-30 ${isRegenerating ? 'animate-spin' : ''}`}
+            title={`Regenerate thumbnails at ${thumbnailSize}px (${settings.thumbnailRefreshScope})`}
+          >
+            <RefreshCw size={16} />
+          </button>
         </div>
 
         {/* Settings button */}

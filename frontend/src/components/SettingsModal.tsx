@@ -298,6 +298,36 @@ export function SettingsModal() {
                   />
                 </div>
               </label>
+
+              {/* Thumbnail refresh scope */}
+              <div>
+                <label className="text-13 font-medium mb-2 block">Thumbnail Refresh Scope</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="thumbnailRefreshScope"
+                      checked={settings.thumbnailRefreshScope === 'all'}
+                      onChange={() => updateSettings({ thumbnailRefreshScope: 'all' })}
+                      className="accent-accent"
+                    />
+                    <span className="text-13">All images</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="thumbnailRefreshScope"
+                      checked={settings.thumbnailRefreshScope === 'visible'}
+                      onChange={() => updateSettings({ thumbnailRefreshScope: 'visible' })}
+                      className="accent-accent"
+                    />
+                    <span className="text-13">Visible only</span>
+                  </label>
+                </div>
+                <p className="text-11 text-macos-dark-text-tertiary mt-1">
+                  Controls which images are regenerated when clicking the refresh button
+                </p>
+              </div>
             </div>
           </section>
 

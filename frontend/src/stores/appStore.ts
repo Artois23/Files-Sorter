@@ -49,6 +49,8 @@ interface AppStore {
   toggleSidebar: () => void;
   hideAssigned: boolean;
   setHideAssigned: (hide: boolean) => void;
+  selectMode: boolean;
+  setSelectMode: (mode: boolean) => void;
   sortBy: 'date' | 'name';
   sortDirection: 'asc' | 'desc';
   setSortBy: (sortBy: 'date' | 'name') => void;
@@ -219,6 +221,8 @@ export const useAppStore = create<AppStore>()(
       })),
       hideAssigned: false,
       setHideAssigned: (hide) => set({ hideAssigned: hide }),
+      selectMode: false,
+      setSelectMode: (mode) => set({ selectMode: mode }),
       sortBy: 'date',
       sortDirection: 'desc',
       setSortBy: (sortBy) => set({ sortBy }),
@@ -235,6 +239,7 @@ export const useAppStore = create<AppStore>()(
         confirmDestructiveActions: true,
         trashHandling: 'system',
         hideAssigned: false,
+        thumbnailRefreshScope: 'all',
       },
       updateSettings: (updates) => set((state) => ({
         settings: { ...state.settings, ...updates },

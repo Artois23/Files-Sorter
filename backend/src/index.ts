@@ -498,6 +498,50 @@ app.get('/api/export/assignments', async (_req, res) => {
   res.json({ path: exportPath });
 });
 
+// Thumbnail regeneration
+app.post('/api/thumbnails/regenerate', async (req, res) => {
+  const { imageIds, size } = req.body;
+
+  if (!size || typeof size !== 'number' || size < 80 || size > 800) {
+    return res.status(400).json({ message: 'size must be a number between 80 and 800' });
+  }
+
+  let imagesToProcess: { id: string; path: string }[];
+
+  if (imageIds === 'all') {
+    imagesToProcess = database.getAllImages().map(img => ({ id: img.id, path: img.path }));
+  } else if (Array.isArray(imageIds)) {
+    imagesToProcess = imageIds
+      .map(id => {
+        const img = database.getImageById(id);
+        return img ? { id: img.id, path: img.path } : null;
+      })
+      .filter((img): img is { id: string; path: string } => img !== null);
+  } else {
+    return res.status(400).json({ message: 'imageIds must be "all" or an array of IDs' });
+  }
+
+  let processed = 0;
+  let errors = 0;
+
+  for (const { id, path: imgPath } of imagesToProcess) {
+    try {
+      const thumbnailPath = await scanner.regenerateThumbnail(imgPath, id, size);
+      if (thumbnailPath) {
+        database.updateImageThumbnail(id, thumbnailPath);
+        processed++;
+      } else {
+        errors++;
+      }
+    } catch (error) {
+      console.error(`Failed to regenerate thumbnail for ${id}:`, error);
+      errors++;
+    }
+  }
+
+  res.json({ processed, errors });
+});
+
 // Clear data
 app.post('/api/data/clear', async (_req, res) => {
   database.clearAll();

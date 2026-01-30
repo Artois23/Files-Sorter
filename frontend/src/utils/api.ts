@@ -227,4 +227,15 @@ export const api = {
   async emptyTrash(): Promise<{ deletedCount: number }> {
     return fetchJson('/vault/trash/empty', { method: 'POST' });
   },
+
+  // Thumbnail regeneration
+  async regenerateThumbnails(
+    imageIds: string[] | 'all',
+    size: number
+  ): Promise<{ processed: number; errors: number }> {
+    return fetchJson('/thumbnails/regenerate', {
+      method: 'POST',
+      body: JSON.stringify({ imageIds, size }),
+    });
+  },
 };

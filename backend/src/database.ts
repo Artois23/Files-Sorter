@@ -193,8 +193,12 @@ export const database = {
     db.prepare('UPDATE images SET path = ?, filename = ? WHERE id = ?').run(newPath, newFilename, id);
   },
 
-  updateImageThumbnail: (id: string, thumbnailPath: string, width: number | null, height: number | null): void => {
-    db.prepare('UPDATE images SET thumbnail_path = ?, width = ?, height = ? WHERE id = ?').run(thumbnailPath, width, height, id);
+  updateImageThumbnail: (id: string, thumbnailPath: string, width?: number | null, height?: number | null): void => {
+    if (width !== undefined && height !== undefined) {
+      db.prepare('UPDATE images SET thumbnail_path = ?, width = ?, height = ? WHERE id = ?').run(thumbnailPath, width, height, id);
+    } else {
+      db.prepare('UPDATE images SET thumbnail_path = ? WHERE id = ?').run(thumbnailPath, id);
+    }
   },
 
   clearAllImages: (): void => {

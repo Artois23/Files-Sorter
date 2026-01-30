@@ -182,7 +182,7 @@ function Thumbnail({
       {/* Thumbnail image */}
       <div
         className={`
-          relative rounded-lg overflow-hidden cursor-pointer transition-all duration-100
+          relative rounded-lg overflow-hidden cursor-pointer transition-all duration-100 bg-macos-dark-bg-3 group
           ${isSelected
             ? 'ring-3 ring-accent scale-[1.02] shadow-lg'
             : 'hover:brightness-110 hover:ring-1 hover:ring-white/20'
@@ -201,7 +201,7 @@ function Thumbnail({
                 : image.thumbnailUrl
             }
             alt={image.filename}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
             loading="lazy"
             draggable={false}
           />
@@ -274,6 +274,7 @@ export function ImageGrid() {
     images,
     editingImageId,
     setEditingImageId,
+    selectMode,
   } = useAppStore();
 
   const visibleImages = getVisibleImages();
@@ -391,7 +392,8 @@ export function ImageGrid() {
   const handleClick = (e: React.MouseEvent, imageId: string) => {
     if (e.shiftKey) {
       selectImage(imageId, false, true);
-    } else if (e.metaKey) {
+    } else if (e.metaKey || selectMode) {
+      // In select mode, clicking toggles selection (like Cmd+click)
       selectImage(imageId, true);
     } else {
       selectImage(imageId);

@@ -164,4 +164,32 @@ export const scanner = {
       console.error(`Failed to generate thumbnail for ${imageData.path}:`, error);
     }
   },
+
+  /**
+   * Regenerate thumbnail at a specific size
+   */
+  regenerateThumbnail: async (
+    imagePath: string,
+    imageId: string,
+    size: number
+  ): Promise<string | null> => {
+    const thumbnailsDir = database.getThumbnailsDir();
+
+    try {
+      const image = sharp(imagePath);
+
+      const thumbnailId = uuid();
+      const thumbnailPath = path.join(thumbnailsDir, `${thumbnailId}.jpg`);
+
+      await image
+        .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toFile(thumbnailPath);
+
+      return thumbnailPath;
+    } catch (error) {
+      console.error(`Failed to regenerate thumbnail for ${imagePath}:`, error);
+      return null;
+    }
+  },
 };
