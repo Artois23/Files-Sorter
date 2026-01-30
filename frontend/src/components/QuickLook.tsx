@@ -122,15 +122,23 @@ export function QuickLook() {
   const filmstripImages = visibleImages.slice(filmstripStart, filmstripEnd);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center animate-fade-in">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/85 backdrop-blur-sm"
         onClick={close}
       />
 
-      {/* Modal container - full screen */}
-      <div className="relative flex flex-col min-h-0 overflow-hidden w-full h-full">
+      {/* Modal container - 75% of viewport */}
+      <div
+        className="relative flex flex-col min-h-0 overflow-hidden rounded-xl shadow-2xl"
+        style={{
+          width: '75vw',
+          height: '75vh',
+          maxWidth: 'calc(100vw - 48px)',
+          maxHeight: 'calc(100vh - 48px)',
+        }}
+      >
         {/* Top bar */}
         <div className="flex items-center justify-between bg-macos-dark-bg-2 px-4 py-3 relative z-10">
           <div className="flex items-center gap-3">

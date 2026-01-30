@@ -467,14 +467,18 @@ export function Sidebar() {
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Sync vault folders with albums
+  // Sync vault folders with albums and refresh images
   const syncVault = useCallback(async () => {
     if (!settings.vaultFolder || isSyncing) return;
 
     setIsSyncing(true);
     try {
-      const syncedAlbums = await api.syncVault();
+      const [syncedAlbums, refreshedImages] = await Promise.all([
+        api.syncVault(),
+        api.getImages(),
+      ]);
       setAlbums(syncedAlbums);
+      useAppStore.getState().setImages(refreshedImages);
     } catch (error) {
       console.error('Failed to sync vault:', error);
     } finally {

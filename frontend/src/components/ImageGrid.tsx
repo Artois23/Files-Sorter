@@ -110,34 +110,65 @@ function Thumbnail({
     data: { type: 'image', imageId: image.id },
   });
 
+  const handleShowInFinder = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.showInFinder(image.path);
+    } catch (error) {
+      console.error('Failed to show in Finder:', error);
+    }
+  };
+
   const getStatusBadge = () => {
     if (!showStatusBadges) return null;
 
     if (image.status === 'trash') {
       return (
-        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+        <button
+          onClick={handleShowInFinder}
+          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+          title="Show in Finder"
+        >
           <Trash2 size={14} className="text-red-400" />
-        </div>
+        </button>
       );
     }
 
     if (image.status === 'not-sure') {
       return (
-        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+        <button
+          onClick={handleShowInFinder}
+          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+          title="Show in Finder"
+        >
           <Clock size={14} className="text-yellow-400" />
-        </div>
+        </button>
       );
     }
 
+    // Always show folder icon for assigned images, clicking opens Finder
     if (image.albumId) {
       return (
-        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center">
+        <button
+          onClick={handleShowInFinder}
+          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors"
+          title="Show in Finder"
+        >
           <Folder size={14} className="text-accent" />
-        </div>
+        </button>
       );
     }
 
-    return null;
+    // For unassigned images, show a generic finder button
+    return (
+      <button
+        onClick={handleShowInFinder}
+        className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center hover:bg-black/80 transition-colors opacity-0 group-hover:opacity-100"
+        title="Show in Finder"
+      >
+        <Folder size={14} className="text-neutral-400" />
+      </button>
+    );
   };
 
   return (
@@ -163,7 +194,12 @@ function Thumbnail({
       >
         {image.isSupported ? (
           <img
-            src={image.thumbnailUrl}
+            src={
+              // Use full image if no thumbnail or if size > 400px for better quality
+              !image.thumbnailUrl || size > 400
+                ? `/api/images/${image.id}/full`
+                : image.thumbnailUrl
+            }
             alt={image.filename}
             className="w-full h-full object-cover"
             loading="lazy"
