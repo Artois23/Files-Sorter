@@ -129,14 +129,12 @@ export function QuickLook() {
         onClick={close}
       />
 
-      {/* Modal container - 75% of viewport */}
+      {/* Modal container - fullscreen */}
       <div
-        className="relative flex flex-col min-h-0 overflow-hidden rounded-xl shadow-2xl"
+        className="relative flex flex-col min-h-0 overflow-hidden"
         style={{
-          width: '75vw',
-          height: '75vh',
-          maxWidth: 'calc(100vw - 48px)',
-          maxHeight: 'calc(100vh - 48px)',
+          width: '100vw',
+          height: '100vh',
         }}
       >
         {/* Top bar */}

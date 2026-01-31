@@ -68,6 +68,11 @@ function App() {
     setForceHideWelcome(true);
   };
 
+  const handleShowWelcome = () => {
+    sessionStorage.removeItem('hideWelcome');
+    setForceHideWelcome(false);
+  };
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -357,7 +362,7 @@ function App() {
       onDragCancel={handleDragCancel}
     >
       <div className="h-screen flex flex-col overflow-hidden">
-        <Toolbar />
+        <Toolbar onShowWelcome={handleShowWelcome} />
 
         <div className="flex-1 flex overflow-hidden">
           <Sidebar />

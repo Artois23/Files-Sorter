@@ -298,16 +298,24 @@ export function ImageGrid() {
   // Track Option key for native drag to Finder
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey) setOptionKeyHeld(true);
+      if (e.key === 'Alt') setOptionKeyHeld(true);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (!e.altKey) setOptionKeyHeld(false);
+      if (e.key === 'Alt') setOptionKeyHeld(false);
+    };
+    // Reset when window loses focus or visibility changes (prevents stuck state)
+    const handleReset = () => {
+      setOptionKeyHeld(false);
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleReset);
+    document.addEventListener('visibilitychange', handleReset);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleReset);
+      document.removeEventListener('visibilitychange', handleReset);
     };
   }, []);
 
@@ -452,6 +460,13 @@ export function ImageGrid() {
     }
   };
 
+  // Sync option key state on pointer down (catches stuck state)
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.altKey !== optionKeyHeld) {
+      setOptionKeyHeld(e.altKey);
+    }
+  };
+
   // Empty state
   if (visibleImages.length === 0) {
     const assignedCount = images.filter(
@@ -497,6 +512,7 @@ export function ImageGrid() {
       className={`flex-1 overflow-y-auto bg-macos-dark-bg-1 ${showFilenameOverlayGrid ? 'show-filenames' : 'hide-filenames'}`}
       style={{ padding }}
       onClick={handleContainerClick}
+      onPointerDown={handlePointerDown}
     >
       <div
         style={{

@@ -14,11 +14,16 @@ import {
   ScanText,
   Search,
   X,
+  Home,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
 
-export function Toolbar() {
+interface ToolbarProps {
+  onShowWelcome?: () => void;
+}
+
+export function Toolbar({ onShowWelcome }: ToolbarProps) {
   const {
     currentView,
     currentAlbumId,
@@ -213,6 +218,16 @@ export function Toolbar() {
     <header className="h-[52px] bg-macos-dark-bg-3 border-b border-macos-dark-border flex items-center px-3 gap-3">
       {/* Left section */}
       <div className="flex items-center gap-2">
+        {onShowWelcome && (
+          <button
+            onClick={onShowWelcome}
+            className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary"
+            title="Home - Manage Vaults"
+          >
+            <Home size={18} />
+          </button>
+        )}
+
         <button
           onClick={toggleSidebar}
           className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary"
