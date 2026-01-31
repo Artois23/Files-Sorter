@@ -6,19 +6,86 @@ import { database } from './database.js';
 import { scanner } from './scanner.js';
 import type { Album, Vault } from './types.js';
 
+// All file extensions we want to scan and track
+const SCANNABLE_EXTENSIONS = new Set([
+  // Images
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif',
+  '.heic', '.heif', '.avif', '.raw', '.cr2', '.nef', '.arw', '.dng',
+  '.orf', '.rw2', '.pef', '.sr2', '.raf', '.ico', '.svg', '.psd',
+  // Videos
+  '.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.m2ts', '.mts',
+  // Documents
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.pages', '.numbers', '.keynote', '.rtf', '.txt',
+  // Archives (useful to track)
+  '.zip', '.rar', '.7z', '.dmg', '.pkg',
+]);
+
+// Extensions that Sharp can process for thumbnails
 const SUPPORTED_EXTENSIONS = new Set([
   '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif',
   '.heic', '.heif', '.avif', '.raw', '.cr2', '.nef', '.arw', '.dng',
-  '.orf', '.rw2', '.pef', '.sr2', '.raf'
+  '.orf', '.rw2', '.pef', '.sr2', '.raf',
+  '.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv'
 ]);
 
-const isImageFile = (filename: string): boolean => {
+// Extensions that should appear in "Images" mode (images + videos)
+const MEDIA_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif',
+  '.heic', '.heif', '.avif',
+  '.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.flv'
+]);
+
+const isScannableFile = (filename: string): boolean => {
   const ext = path.extname(filename).toLowerCase();
-  return SUPPORTED_EXTENSIONS.has(ext);
+  return SCANNABLE_EXTENSIONS.has(ext);
 };
 
 // Special folders that shouldn't be treated as albums
 const SPECIAL_FOLDERS = new Set(['_Trash', '_Sort Later', '.DS_Store']);
+
+// macOS bundle extensions - these are directories but should not be traversed
+const BUNDLE_EXTENSIONS = new Set([
+  '.app', '.framework', '.bundle', '.plugin', '.kext',
+  '.prefPane', '.appex', '.xpc', '.qlgenerator', '.mdimporter'
+]);
+
+const isMacOSBundle = (name: string): boolean => {
+  const ext = path.extname(name).toLowerCase();
+  return BUNDLE_EXTENSIONS.has(ext);
+};
+
+// Sync progress tracking
+export interface SyncProgress {
+  isSyncing: boolean;
+  vaultId: string | null;
+  vaultName: string | null;
+  foldersScanned: number;
+  filesFound: number;
+  currentFolder: string;
+}
+
+let syncProgress: SyncProgress = {
+  isSyncing: false,
+  vaultId: null,
+  vaultName: null,
+  foldersScanned: 0,
+  filesFound: 0,
+  currentFolder: '',
+};
+
+export const getSyncProgress = (): SyncProgress => syncProgress;
+
+const resetSyncProgress = () => {
+  syncProgress = {
+    isSyncing: false,
+    vaultId: null,
+    vaultName: null,
+    foldersScanned: 0,
+    filesFound: 0,
+    currentFolder: '',
+  };
+};
 
 // Vault log file name
 const VAULT_LOG_FILENAME = '.image-sorter-log.md';
@@ -136,6 +203,7 @@ export const vault = {
           if (!entry.isDirectory()) continue;
           if (SPECIAL_FOLDERS.has(entry.name)) continue;
           if (entry.name.startsWith('.')) continue;
+          if (isMacOSBundle(entry.name)) continue;  // Skip .app bundles
 
           const folderRelPath = relativePath ? path.join(relativePath, entry.name) : entry.name;
           const folderAbsPath = path.join(dirPath, entry.name);
@@ -202,7 +270,18 @@ export const vault = {
       throw new Error('Vault not found');
     }
 
-    const vaultAlbums = await this.scanVaultFolder(vaultId);
+    // Initialize sync progress
+    syncProgress = {
+      isSyncing: true,
+      vaultId,
+      vaultName: vaultRecord.displayName,
+      foldersScanned: 0,
+      filesFound: 0,
+      currentFolder: vaultRecord.path,
+    };
+
+    try {
+      const vaultAlbums = await this.scanVaultFolder(vaultId);
 
     // Get existing albums for this vault
     const existingAlbums = database.getAlbumsByVault(vaultId);
@@ -271,13 +350,18 @@ export const vault = {
       if (!album) continue;
 
       const folderPath = path.join(vaultRecord.path, vaultAlbum.path);
+      syncProgress.currentFolder = folderPath;
+      syncProgress.foldersScanned++;
 
       try {
         const entries = await fs.readdir(folderPath, { withFileTypes: true });
 
         for (const entry of entries) {
           if (!entry.isFile()) continue;
-          if (!isImageFile(entry.name)) continue;
+          // Skip hidden files
+          if (entry.name.startsWith('.')) continue;
+          // Skip non-scannable files (source code, etc.)
+          if (!isScannableFile(entry.name)) continue;
 
           const imagePath = path.join(folderPath, entry.name);
 
@@ -303,6 +387,7 @@ export const vault = {
                 modifiedDate: stat.mtime.toISOString(),
                 thumbnailPath: null,
                 isSupported: SUPPORTED_EXTENSIONS.has(`.${ext}`),
+                isMedia: MEDIA_EXTENSIONS.has(`.${ext}`),
                 format: ext,
                 albumId: album.id,
                 vaultId: vaultId,
@@ -313,6 +398,7 @@ export const vault = {
               };
 
               database.insertImage(imageData);
+              syncProgress.filesFound++;
 
               // Generate thumbnail in background (don't await)
               scanner.generateThumbnailForImage(imageData).catch(console.error);
@@ -324,6 +410,66 @@ export const vault = {
       } catch (err) {
         console.error(`Failed to scan folder ${folderPath}:`, err);
       }
+    }
+
+    // Scan root-level files (orphans - files not in any subfolder)
+    syncProgress.currentFolder = vaultRecord.path + ' (root)';
+    try {
+      const rootEntries = await fs.readdir(vaultRecord.path, { withFileTypes: true });
+
+      for (const entry of rootEntries) {
+        if (!entry.isFile()) continue;
+        // Skip hidden files
+        if (entry.name.startsWith('.')) continue;
+        // Skip non-scannable files (source code, etc.)
+        if (!isScannableFile(entry.name)) continue;
+
+        const imagePath = path.join(vaultRecord.path, entry.name);
+
+        if (existingImagePaths.has(imagePath)) {
+          // Image exists, ensure it's marked as orphan (albumId: null) and belongs to this vault
+          const existingImage = existingImages.find(img => img.path === imagePath);
+          if (existingImage && (existingImage.albumId !== null || existingImage.vaultId !== vaultId)) {
+            database.updateImages([existingImage.id], { albumId: null, vaultId, status: 'normal' });
+          }
+        } else {
+          // New root-level file, add as orphan
+          try {
+            const stat = await fs.stat(imagePath);
+            const ext = path.extname(entry.name).toLowerCase().slice(1);
+
+            const imageData = {
+              id: uuid(),
+              path: imagePath,
+              filename: entry.name,
+              fileSize: stat.size,
+              width: null,
+              height: null,
+              modifiedDate: stat.mtime.toISOString(),
+              thumbnailPath: null,
+              isSupported: SUPPORTED_EXTENSIONS.has(`.${ext}`),
+              isMedia: MEDIA_EXTENSIONS.has(`.${ext}`),
+              format: ext,
+              albumId: null, // Root-level files are orphans
+              vaultId: vaultId,
+              status: 'normal' as const,
+              ocrText: null,
+              ocrProcessed: false,
+              ocrDate: null,
+            };
+
+            database.insertImage(imageData);
+            syncProgress.filesFound++;
+
+            // Generate thumbnail in background (don't await)
+            scanner.generateThumbnailForImage(imageData).catch(console.error);
+          } catch (err) {
+            console.error(`Failed to add root-level image ${imagePath}:`, err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to scan vault root ${vaultRecord.path}:`, err);
     }
 
     // Migrate orphaned images: claim any images whose path starts with vault path but have no vaultId
@@ -371,10 +517,23 @@ export const vault = {
       database.deleteImages(staleImageIds);
     }
 
+    // Clean up non-scannable files (e.g., .js, .ts files from old scans)
+    const nonScannableImages = database.getAllImages().filter(img =>
+      img.vaultId === vaultId && !isScannableFile(img.filename)
+    );
+    if (nonScannableImages.length > 0) {
+      console.log(`Removing ${nonScannableImages.length} non-scannable file entries from vault ${vaultRecord.displayName}`);
+      database.deleteImages(nonScannableImages.map(img => img.id));
+    }
+
     // Log the sync
     await writeVaultLog(vaultRecord.path, 'SYNC', `Synced vault: ${newAlbums.length} folders, ${orphanedImages.length} migrated images, ${staleImageIds.length} stale entries removed`);
 
     return newAlbums;
+    } finally {
+      // Reset sync progress when done
+      resetSyncProgress();
+    }
   },
 
   /**
@@ -387,6 +546,17 @@ export const vault = {
     for (const vaultRecord of vaults) {
       const albums = await this.syncVault(vaultRecord.id);
       allAlbums.push(...albums);
+    }
+
+    // Clean up orphaned files from deleted vaults
+    const validVaultIds = new Set(vaults.map(v => v.id));
+    const allImages = database.getAllImages();
+    const orphanedFromDeletedVaults = allImages.filter(
+      img => img.vaultId && !validVaultIds.has(img.vaultId)
+    );
+    if (orphanedFromDeletedVaults.length > 0) {
+      console.log(`Removing ${orphanedFromDeletedVaults.length} files from deleted vaults`);
+      database.deleteImages(orphanedFromDeletedVaults.map(img => img.id));
     }
 
     return allAlbums;
@@ -1072,7 +1242,8 @@ export const vault = {
 
       for (const entry of entries) {
         if (!entry.isFile()) continue;
-        if (!isImageFile(entry.name)) continue;
+        // Skip hidden files
+        if (entry.name.startsWith('.')) continue;
 
         images.push({
           id: uuid(),
@@ -1128,8 +1299,11 @@ export const vault = {
     // Initialize vault log
     await initVaultLog(folderPath, folderName);
 
-    // Sync the new vault to discover folders and images
-    await this.syncVault(newVault.id);
+    // Start sync in background (don't await - return immediately)
+    this.syncVault(newVault.id).catch(err => {
+      console.error(`Background sync failed for vault ${newVault.displayName}:`, err);
+      resetSyncProgress();
+    });
 
     return newVault;
   },
