@@ -326,12 +326,10 @@ export const useAppStore = create<AppStore>()(
           vaults.filter((v) => v.isVisible).map((v) => v.id)
         );
 
-        // Filter by visible vaults first (unless viewing trash/not-sure which could be from any vault)
-        const vaultFiltered = currentView === 'trash' || currentView === 'not-sure'
-          ? images
-          : vaults.length > 0
-            ? images.filter((img) => !img.vaultId || visibleVaultIds.has(img.vaultId))
-            : images;
+        // Filter by visible vaults (for views that need it)
+        const vaultFiltered = vaults.length > 0
+          ? images.filter((img) => !img.vaultId || visibleVaultIds.has(img.vaultId))
+          : images;
 
         let filtered: ImageFile[];
         switch (currentView) {
@@ -350,13 +348,17 @@ export const useAppStore = create<AppStore>()(
             );
             break;
           case 'trash':
-            filtered = vaultFiltered.filter((img) => img.status === 'trash');
+            // Trash shows all trashed images regardless of vault visibility
+            filtered = images.filter((img) => img.status === 'trash');
             break;
           case 'not-sure':
-            filtered = vaultFiltered.filter((img) => img.status === 'not-sure');
+            // Not-sure shows all regardless of vault visibility
+            filtered = images.filter((img) => img.status === 'not-sure');
             break;
           case 'album':
-            filtered = vaultFiltered.filter(
+            // Album view: show all images in the album regardless of vault visibility
+            // If user can see the album, they should see all its contents
+            filtered = images.filter(
               (img) => img.albumId === currentAlbumId && img.status === 'normal'
             );
             break;
