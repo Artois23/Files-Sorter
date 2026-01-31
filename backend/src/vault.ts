@@ -307,6 +307,9 @@ export const vault = {
                 albumId: album.id,
                 vaultId: vaultId,
                 status: 'normal' as const,
+                ocrText: null,
+                ocrProcessed: false,
+                ocrDate: null,
               };
 
               database.insertImage(imageData);
@@ -349,8 +352,27 @@ export const vault = {
       console.log(`Migrated ${orphanedImages.length} orphaned images to vault ${vaultRecord.displayName}`);
     }
 
+    // Clean up stale image entries (files that no longer exist at their stored paths)
+    const imagesToCheck = database.getAllImages().filter(img => img.vaultId === vaultId);
+    const staleImageIds: string[] = [];
+
+    for (const img of imagesToCheck) {
+      try {
+        await fs.access(img.path);
+        // File exists, keep it
+      } catch {
+        // File doesn't exist at stored path, mark as stale
+        staleImageIds.push(img.id);
+      }
+    }
+
+    if (staleImageIds.length > 0) {
+      console.log(`Removing ${staleImageIds.length} stale image entries from vault ${vaultRecord.displayName}`);
+      database.deleteImages(staleImageIds);
+    }
+
     // Log the sync
-    await writeVaultLog(vaultRecord.path, 'SYNC', `Synced vault: ${newAlbums.length} folders, ${orphanedImages.length} migrated images`);
+    await writeVaultLog(vaultRecord.path, 'SYNC', `Synced vault: ${newAlbums.length} folders, ${orphanedImages.length} migrated images, ${staleImageIds.length} stale entries removed`);
 
     return newAlbums;
   },
@@ -743,12 +765,26 @@ export const vault = {
       return { newPath: image.path, filename: image.filename, vaultId: image.vaultId };
     }
 
+    // Check if source file exists
+    try {
+      await fs.access(image.path);
+    } catch {
+      throw new Error(`Source file not found: ${image.path}`);
+    }
+
     // Ensure target directory exists
     await fs.mkdir(targetDir, { recursive: true });
 
     // Get unique filename in target
     const targetPath = await getUniqueFilename(targetDir, image.filename);
     const newFilename = path.basename(targetPath);
+
+    // Skip if already at target location
+    if (image.path === targetPath) {
+      // Just update the database albumId
+      database.updateImages([imageId], { albumId, vaultId: targetVaultId, status: 'normal' });
+      return { newPath: image.path, filename: image.filename, vaultId: targetVaultId };
+    }
 
     // Move the file (supports cross-filesystem)
     await moveFile(image.path, targetPath);

@@ -9,6 +9,7 @@ import { database } from './database.js';
 import { scanner } from './scanner.js';
 import { organizer } from './organizer.js';
 import { vault } from './vault.js';
+import { processImageOCR } from './ocr.js';
 
 const execAsync = promisify(exec);
 
@@ -446,6 +447,7 @@ app.post('/api/vault/images/batch-move', async (req, res) => {
       results.push({ id: imageId, success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Failed to move image ${imageId} to album ${albumId}:`, error);
       results.push({ id: imageId, success: false, error: message });
     }
   }
@@ -501,6 +503,98 @@ app.post('/api/vault/trash/empty', async (_req, res) => {
     const message = error instanceof Error ? error.message : 'Failed to empty trash';
     res.status(500).json({ message });
   }
+});
+
+// OCR
+let ocrProgress = {
+  isProcessing: false,
+  total: 0,
+  completed: 0,
+  current: '',
+};
+
+app.post('/api/images/ocr/process', async (req, res) => {
+  const { imageIds, force = false } = req.body;
+
+  if (!imageIds || !Array.isArray(imageIds)) {
+    return res.status(400).json({ message: 'imageIds array is required' });
+  }
+
+  // Get images to process
+  const images = database.getImagesForOCR(imageIds);
+
+  // Filter out already processed unless force is true
+  const toProcess = force
+    ? images
+    : images.filter(img => !img.ocrProcessed);
+
+  if (toProcess.length === 0) {
+    return res.json({
+      processed: 0,
+      skipped: images.length,
+      errors: 0,
+    });
+  }
+
+  // Start processing in background
+  ocrProgress = {
+    isProcessing: true,
+    total: toProcess.length,
+    completed: 0,
+    current: '',
+  };
+
+  // Process async
+  (async () => {
+    let processed = 0;
+    let errors = 0;
+
+    for (const image of toProcess) {
+      ocrProgress.current = image.path;
+
+      const ocrText = await processImageOCR(image.path);
+
+      if (ocrText !== null) {
+        database.updateImageOCR(image.id, ocrText);
+        processed++;
+      } else {
+        // Still mark as processed but with empty text
+        database.updateImageOCR(image.id, '');
+        errors++;
+      }
+
+      ocrProgress.completed++;
+    }
+
+    ocrProgress.isProcessing = false;
+    ocrProgress.current = '';
+  })().catch(console.error);
+
+  res.json({
+    message: 'OCR processing started',
+    total: toProcess.length,
+    skipped: images.length - toProcess.length,
+  });
+});
+
+app.get('/api/images/ocr/status', (_req, res) => {
+  res.json(ocrProgress);
+});
+
+app.post('/api/images/ocr/cancel', (_req, res) => {
+  ocrProgress.isProcessing = false;
+  res.json({ message: 'OCR cancelled' });
+});
+
+app.get('/api/images/ocr/search', (req, res) => {
+  const { q } = req.query;
+
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ message: 'Search query (q) is required' });
+  }
+
+  const ids = database.searchImagesByOCR(q);
+  res.json(ids);
 });
 
 // Settings

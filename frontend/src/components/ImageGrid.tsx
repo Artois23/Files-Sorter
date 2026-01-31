@@ -7,6 +7,7 @@ import {
   FileQuestion,
   AlertCircle,
   Loader2,
+  ScanText,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useDraggable } from '@dnd-kit/core';
@@ -18,6 +19,7 @@ interface ThumbnailProps {
   isSelected: boolean;
   size: number;
   isEditing: boolean;
+  nativeDragEnabled: boolean;
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onStartEdit: () => void;
@@ -29,6 +31,7 @@ function Thumbnail({
   isSelected,
   size,
   isEditing,
+  nativeDragEnabled,
   onClick,
   onContextMenu,
   onStartEdit,
@@ -108,6 +111,7 @@ function Thumbnail({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: image.id,
     data: { type: 'image', imageId: image.id },
+    disabled: nativeDragEnabled, // Disable @dnd-kit when Option is held for native drag
   });
 
   const handleShowInFinder = async (e: React.MouseEvent) => {
@@ -203,7 +207,7 @@ function Thumbnail({
             alt={image.filename}
             className="w-full h-full object-contain"
             loading="lazy"
-            draggable={false}
+            draggable={nativeDragEnabled}
           />
         ) : (
           <div className="w-full h-full bg-macos-dark-bg-3 flex flex-col items-center justify-center gap-2">
@@ -216,8 +220,18 @@ function Thumbnail({
 
         {getStatusBadge()}
 
-        {!image.isSupported && (
-          <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-orange-500/80 flex items-center justify-center">
+        {/* OCR processed badge */}
+        {image.ocrProcessed && (
+          <div
+            className="absolute top-2 left-2 w-5 h-5 rounded-full bg-black/60 flex items-center justify-center pointer-events-none"
+            title={image.ocrText ? `OCR: ${image.ocrText.substring(0, 100)}${image.ocrText.length > 100 ? '...' : ''}` : 'OCR processed (no text found)'}
+          >
+            <ScanText size={12} className="text-green-400" />
+          </div>
+        )}
+
+        {!image.isSupported && !image.ocrProcessed && (
+          <div className="absolute top-2 left-2 w-6 h-6 rounded-full bg-orange-500/80 flex items-center justify-center pointer-events-none">
             <AlertCircle size={14} className="text-white" />
           </div>
         )}
@@ -279,6 +293,23 @@ export function ImageGrid() {
 
   const visibleImages = getVisibleImages();
   const containerRef = useRef<HTMLDivElement>(null);
+  const [optionKeyHeld, setOptionKeyHeld] = useState(false);
+
+  // Track Option key for native drag to Finder
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey) setOptionKeyHeld(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.altKey) setOptionKeyHeld(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   const gap = 8;
   const padding = 16;
@@ -504,6 +535,7 @@ export function ImageGrid() {
                     isSelected={selectedImageIds.has(image.id)}
                     size={thumbnailSize}
                     isEditing={editingImageId === image.id}
+                    nativeDragEnabled={optionKeyHeld}
                     onClick={(e) => handleClick(e, image.id)}
                     onContextMenu={(e) => handleContextMenu(e, image.id)}
                     onStartEdit={() => setEditingImageId(image.id)}

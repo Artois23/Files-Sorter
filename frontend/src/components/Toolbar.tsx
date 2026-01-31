@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Menu,
   Settings,
@@ -11,6 +11,9 @@ import {
   FileText,
   RefreshCw,
   MousePointerClick,
+  ScanText,
+  Search,
+  X,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { api } from '../utils/api';
@@ -39,6 +42,9 @@ export function Toolbar() {
     selectMode,
     setSelectMode,
     selectedImageIds,
+    ocrSearchQuery,
+    setOcrSearchQuery,
+    setOcrProgress,
   } = useAppStore();
 
   // Calculate visible image count (respects vault visibility)
@@ -50,9 +56,14 @@ export function Toolbar() {
   ).length;
 
   const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showOcrMenu, setShowOcrMenu] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [localSearchQuery, setLocalSearchQuery] = useState(ocrSearchQuery);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
+  const ocrButtonRef = useRef<HTMLButtonElement>(null);
+  const ocrMenuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Close filter menu when clicking outside
   useEffect(() => {
@@ -64,13 +75,33 @@ export function Toolbar() {
       ) {
         setShowFilterMenu(false);
       }
+      if (
+        ocrMenuRef.current &&
+        !ocrMenuRef.current.contains(e.target as Node) &&
+        !ocrButtonRef.current?.contains(e.target as Node)
+      ) {
+        setShowOcrMenu(false);
+      }
     };
 
-    if (showFilterMenu) {
+    if (showFilterMenu || showOcrMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showFilterMenu]);
+  }, [showFilterMenu, showOcrMenu]);
+
+  // Debounced OCR search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setOcrSearchQuery(localSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [localSearchQuery, setOcrSearchQuery]);
+
+  // Sync local search query with store
+  useEffect(() => {
+    setLocalSearchQuery(ocrSearchQuery);
+  }, [ocrSearchQuery]);
 
   const currentAlbum = currentAlbumId
     ? albums.find((a) => a.id === currentAlbumId)
@@ -146,6 +177,38 @@ export function Toolbar() {
   // Check if any sort option is non-default
   const hasActiveFilter = sortBy !== 'date' || sortDirection !== 'desc';
 
+  const handleOcrProcess = useCallback(async (scope: 'selected' | 'view' | 'all') => {
+    setShowOcrMenu(false);
+
+    let imageIds: string[];
+    switch (scope) {
+      case 'selected':
+        imageIds = Array.from(selectedImageIds);
+        break;
+      case 'view':
+        imageIds = getVisibleImages().map(img => img.id);
+        break;
+      case 'all':
+        imageIds = images.map(img => img.id);
+        break;
+    }
+
+    if (imageIds.length === 0) return;
+
+    try {
+      setOcrProgress({ isProcessing: true, total: imageIds.length, completed: 0, current: '' });
+      await api.processOCR(imageIds);
+    } catch (error) {
+      console.error('Failed to start OCR processing:', error);
+      setOcrProgress({ isProcessing: false });
+    }
+  }, [selectedImageIds, getVisibleImages, images, setOcrProgress]);
+
+  const clearOcrSearch = useCallback(() => {
+    setLocalSearchQuery('');
+    setOcrSearchQuery('');
+  }, [setOcrSearchQuery]);
+
   return (
     <header className="h-[52px] bg-macos-dark-bg-3 border-b border-macos-dark-border flex items-center px-3 gap-3">
       {/* Left section */}
@@ -219,6 +282,70 @@ export function Toolbar() {
 
       {/* Right section */}
       <div className="flex items-center gap-3">
+        {/* OCR Search Field */}
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-macos-dark-text-tertiary" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={localSearchQuery}
+            onChange={(e) => setLocalSearchQuery(e.target.value)}
+            placeholder="Search text in images..."
+            className="w-48 h-8 pl-8 pr-8 bg-macos-dark-bg-1 border border-macos-dark-border rounded-md text-13 text-white placeholder:text-macos-dark-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
+          />
+          {localSearchQuery && (
+            <button
+              onClick={clearOcrSearch}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-macos-dark-text-tertiary hover:text-white"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* OCR Button with dropdown */}
+        <div className="relative">
+          <button
+            ref={ocrButtonRef}
+            onClick={() => setShowOcrMenu(!showOcrMenu)}
+            className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-macos-dark-bg-2 text-macos-dark-text-secondary"
+            title="OCR - Extract text from images"
+          >
+            <ScanText size={18} />
+          </button>
+
+          {showOcrMenu && (
+            <div
+              ref={ocrMenuRef}
+              className="absolute right-0 top-full mt-1 bg-macos-dark-bg-2/95 backdrop-blur-xl rounded-lg shadow-xl border border-macos-dark-border py-1 min-w-[180px] z-50"
+            >
+              <div className="px-3 py-1.5 text-11 text-macos-dark-text-tertiary uppercase tracking-wide">
+                Process OCR
+              </div>
+              {selectedImageIds.size > 0 && (
+                <button
+                  onClick={() => handleOcrProcess('selected')}
+                  className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white"
+                >
+                  OCR Selected ({selectedImageIds.size})
+                </button>
+              )}
+              <button
+                onClick={() => handleOcrProcess('view')}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white"
+              >
+                OCR Current View
+              </button>
+              <button
+                onClick={() => handleOcrProcess('all')}
+                className="w-full px-3 py-1.5 text-left text-13 hover:bg-accent hover:text-white"
+              >
+                OCR All Images
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Select mode toggle */}
         <button
           onClick={() => setSelectMode(!selectMode)}

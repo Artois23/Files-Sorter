@@ -20,6 +20,9 @@ export interface ImageFile {
   albumId: string | null;
   vaultId: string | null;
   status: 'normal' | 'trash' | 'not-sure';
+  ocrText: string | null;
+  ocrProcessed: boolean;
+  ocrDate: string | null;
 }
 
 export interface Album {

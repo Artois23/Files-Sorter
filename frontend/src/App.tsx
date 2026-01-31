@@ -4,6 +4,7 @@ import {
   DragEndEvent,
   DragOverlay,
   DragStartEvent,
+  DragCancelEvent,
   PointerSensor,
   KeyboardSensor,
   useSensor,
@@ -36,6 +37,7 @@ import { ContextMenu } from './components/ContextMenu';
 import { QuickLook } from './components/QuickLook';
 import { SettingsModal } from './components/SettingsModal';
 import { ScanProgress } from './components/ScanProgress';
+import { OcrProgress } from './components/OcrProgress';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { useState } from 'react';
 import type { ImageFile } from './types';
@@ -110,6 +112,12 @@ function App() {
   }, [setImages, setAlbums, updateSettings]);
 
   const handleDragStart = (event: DragStartEvent) => {
+    const activeData = event.active.data.current;
+    // Only handle image drags here, not album drags
+    if (activeData?.type !== 'image') {
+      return;
+    }
+
     const imageId = event.active.id as string;
     const image = getImageById(imageId);
     if (image) {
@@ -121,7 +129,12 @@ function App() {
     }
   };
 
+  const handleDragCancel = (_event: DragCancelEvent) => {
+    setDraggedImage(null);
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
+    // Always clear drag state first
     setDraggedImage(null);
 
     const { active, over } = event;
@@ -159,10 +172,24 @@ function App() {
           if (failures.length > 0) {
             console.error('Some files failed to move:', failures);
             alert(`${failures.length} file(s) failed to move. Check console for details.`);
+            // Refresh images from backend to sync state
+            try {
+              const freshImages = await api.getImages();
+              setImages(freshImages);
+            } catch (e) {
+              console.error('Failed to refresh images after error:', e);
+            }
           }
         } catch (error) {
           console.error('Failed to move images to album:', error);
           alert(error instanceof Error ? error.message : 'Failed to move images');
+          // Refresh images from backend to sync state
+          try {
+            const freshImages = await api.getImages();
+            setImages(freshImages);
+          } catch (e) {
+            console.error('Failed to refresh images after error:', e);
+          }
         }
         return;
       }
@@ -327,6 +354,7 @@ function App() {
       collisionDetection={pointerWithin}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="h-screen flex flex-col overflow-hidden">
         <Toolbar />
@@ -343,6 +371,7 @@ function App() {
         <QuickLook />
         <SettingsModal />
         <ScanProgress />
+        <OcrProgress />
 
         {/* Drag overlay */}
         <DragOverlay dropAnimation={null} modifiers={[snapToCursor]}>

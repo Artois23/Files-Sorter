@@ -8,7 +8,8 @@ import type {
   OrganizeProgress,
   ViewType,
   OrganizeSummary,
-  Vault
+  Vault,
+  OcrProgress
 } from '../types';
 
 interface AppStore {
@@ -76,6 +77,12 @@ interface AppStore {
   // Organize progress
   organizeProgress: OrganizeProgress;
   setOrganizeProgress: (progress: Partial<OrganizeProgress>) => void;
+
+  // OCR
+  ocrSearchQuery: string;
+  setOcrSearchQuery: (query: string) => void;
+  ocrProgress: OcrProgress;
+  setOcrProgress: (progress: Partial<OcrProgress>) => void;
 
   // Modals
   quickLookImageId: string | null;
@@ -299,6 +306,19 @@ export const useAppStore = create<AppStore>()(
         organizeProgress: { ...state.organizeProgress, ...progress },
       })),
 
+      // OCR
+      ocrSearchQuery: '',
+      setOcrSearchQuery: (query) => set({ ocrSearchQuery: query }),
+      ocrProgress: {
+        isProcessing: false,
+        total: 0,
+        completed: 0,
+        current: '',
+      },
+      setOcrProgress: (progress) => set((state) => ({
+        ocrProgress: { ...state.ocrProgress, ...progress },
+      })),
+
       // Modals
       quickLookImageId: null,
       setQuickLookImageId: (id) => set({ quickLookImageId: id }),
@@ -319,7 +339,7 @@ export const useAppStore = create<AppStore>()(
 
       // Computed
       getVisibleImages: () => {
-        const { images, vaults, currentView, currentAlbumId, currentVaultId, hideAssigned, sortBy, sortDirection } = get();
+        const { images, vaults, currentView, currentAlbumId, currentVaultId, hideAssigned, sortBy, sortDirection, ocrSearchQuery } = get();
 
         // Get visible vault IDs
         const visibleVaultIds = new Set(
@@ -375,6 +395,14 @@ export const useAppStore = create<AppStore>()(
             break;
           default:
             filtered = vaultFiltered;
+        }
+
+        // Apply OCR search filter if set
+        if (ocrSearchQuery.trim()) {
+          const query = ocrSearchQuery.toLowerCase();
+          filtered = filtered.filter(
+            (img) => img.ocrText && img.ocrText.toLowerCase().includes(query)
+          );
         }
 
         // Sort filtered images

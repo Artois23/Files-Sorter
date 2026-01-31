@@ -91,6 +91,9 @@ export const scanner = {
         albumId: null,
         vaultId: null,
         status: 'normal' as const,
+        ocrText: null,
+        ocrProcessed: false,
+        ocrDate: null,
       };
 
       database.insertImage(imageData);

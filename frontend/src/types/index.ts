@@ -20,6 +20,9 @@ export interface ImageFile {
   albumId: string | null;
   vaultId: string | null;
   status: 'normal' | 'trash' | 'not-sure';
+  ocrText: string | null;
+  ocrProcessed: boolean;
+  ocrDate: string | null;
 }
 
 export interface Album {
@@ -73,6 +76,13 @@ export interface Settings {
   trashHandling: 'system' | 'vault';
   hideAssigned: boolean;
   thumbnailRefreshScope: 'all' | 'visible';
+}
+
+export interface OcrProgress {
+  isProcessing: boolean;
+  total: number;
+  completed: number;
+  current: string;
 }
 
 export type ViewType = 'all' | 'orphans' | 'trash' | 'not-sure' | 'album' | 'vault';

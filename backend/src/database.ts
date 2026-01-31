@@ -88,6 +88,25 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_albums_vault ON albums(vault_id);
 `);
 
+// Migration: Add OCR columns to images table if not present
+try {
+  db.exec(`ALTER TABLE images ADD COLUMN ocr_text TEXT`);
+} catch {
+  // Column already exists
+}
+
+try {
+  db.exec(`ALTER TABLE images ADD COLUMN ocr_processed INTEGER DEFAULT 0`);
+} catch {
+  // Column already exists
+}
+
+try {
+  db.exec(`ALTER TABLE images ADD COLUMN ocr_date TEXT`);
+} catch {
+  // Column already exists
+}
+
 // Default settings (removed sourceFolder and vaultFolder - now using multi-vault system)
 const DEFAULT_SETTINGS: Settings = {
   sourceFolder: null,
@@ -199,7 +218,8 @@ export const database = {
       SELECT id, path, filename, file_size as fileSize, width, height,
              modified_date as modifiedDate, thumbnail_path as thumbnailPath,
              is_supported as isSupported, format, album_id as albumId,
-             vault_id as vaultId, status
+             vault_id as vaultId, status,
+             ocr_text as ocrText, ocr_processed as ocrProcessed, ocr_date as ocrDate
       FROM images
       ORDER BY filename
     `).all() as Array<{
@@ -216,12 +236,16 @@ export const database = {
       albumId: string | null;
       vaultId: string | null;
       status: string;
+      ocrText: string | null;
+      ocrProcessed: number;
+      ocrDate: string | null;
     }>;
 
     return rows.map(row => ({
       ...row,
       isSupported: Boolean(row.isSupported),
       status: row.status as 'normal' | 'trash' | 'not-sure',
+      ocrProcessed: Boolean(row.ocrProcessed),
     }));
   },
 
@@ -230,7 +254,8 @@ export const database = {
       SELECT id, path, filename, file_size as fileSize, width, height,
              modified_date as modifiedDate, thumbnail_path as thumbnailPath,
              is_supported as isSupported, format, album_id as albumId,
-             vault_id as vaultId, status
+             vault_id as vaultId, status,
+             ocr_text as ocrText, ocr_processed as ocrProcessed, ocr_date as ocrDate
       FROM images WHERE id = ?
     `).get(id) as {
       id: string;
@@ -246,6 +271,9 @@ export const database = {
       albumId: string | null;
       vaultId: string | null;
       status: string;
+      ocrText: string | null;
+      ocrProcessed: number;
+      ocrDate: string | null;
     } | undefined;
 
     if (!row) return null;
@@ -254,6 +282,7 @@ export const database = {
       ...row,
       isSupported: Boolean(row.isSupported),
       status: row.status as 'normal' | 'trash' | 'not-sure',
+      ocrProcessed: Boolean(row.ocrProcessed),
     };
   },
 
@@ -449,5 +478,38 @@ export const database = {
   clearAll: (): void => {
     db.prepare('DELETE FROM images').run();
     db.prepare('DELETE FROM albums').run();
+  },
+
+  // OCR functions
+  updateImageOCR: (id: string, ocrText: string): void => {
+    db.prepare(`
+      UPDATE images
+      SET ocr_text = ?, ocr_processed = 1, ocr_date = datetime('now')
+      WHERE id = ?
+    `).run(ocrText, id);
+  },
+
+  searchImagesByOCR: (searchTerm: string): string[] => {
+    const rows = db.prepare(`
+      SELECT id FROM images
+      WHERE ocr_text LIKE ?
+      AND ocr_processed = 1
+    `).all(`%${searchTerm}%`) as { id: string }[];
+
+    return rows.map(row => row.id);
+  },
+
+  getImagesForOCR: (ids: string[]): Array<{ id: string; path: string; ocrProcessed: boolean }> => {
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT id, path, ocr_processed as ocrProcessed
+      FROM images
+      WHERE id IN (${placeholders})
+    `).all(...ids) as Array<{ id: string; path: string; ocrProcessed: number }>;
+
+    return rows.map(row => ({
+      ...row,
+      ocrProcessed: Boolean(row.ocrProcessed),
+    }));
   },
 };

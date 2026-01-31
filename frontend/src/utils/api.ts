@@ -1,4 +1,4 @@
-import type { ImageFile, Album, Settings, OrganizeSummary, Vault } from '../types';
+import type { ImageFile, Album, Settings, OrganizeSummary, Vault, OcrProgress } from '../types';
 
 const API_BASE = '/api';
 
@@ -285,5 +285,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ imageIds, size }),
     });
+  },
+
+  // OCR
+  async processOCR(
+    imageIds: string[],
+    force: boolean = false
+  ): Promise<{ message: string; total: number; skipped: number }> {
+    return fetchJson('/images/ocr/process', {
+      method: 'POST',
+      body: JSON.stringify({ imageIds, force }),
+    });
+  },
+
+  async getOCRStatus(): Promise<OcrProgress> {
+    return fetchJson('/images/ocr/status');
+  },
+
+  async cancelOCR(): Promise<void> {
+    return fetchJson('/images/ocr/cancel', { method: 'POST' });
+  },
+
+  async searchOCR(query: string): Promise<string[]> {
+    return fetchJson(`/images/ocr/search?q=${encodeURIComponent(query)}`);
   },
 };
